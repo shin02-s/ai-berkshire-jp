@@ -1,5 +1,5 @@
 ---
-description: "AI Berkshire 日本株スキルの入口: 日本株の業界投資研究。"
+description: "AI Berkshire 日本株スキルの入口: 日本株の業界・産業チェーン研究。"
 argument-hint: $ARGUMENTS
 ---
 

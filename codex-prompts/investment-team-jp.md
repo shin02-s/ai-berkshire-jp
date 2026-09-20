@@ -1,5 +1,5 @@
 ---
-description: "AI Berkshire 日本株スキルの入口: 日本株投研チーム。"
+description: "AI Berkshire 日本株スキルの入口: 日本株投資調査チーム：4役並行分析フレームワーク。"
 argument-hint: $ARGUMENTS
 ---
 
