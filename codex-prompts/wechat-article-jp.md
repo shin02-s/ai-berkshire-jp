@@ -1,5 +1,5 @@
 ---
-description: "AI Berkshire 日本株スキルの入口: 日本株調査を日本語記事へ仕上げる。"
+description: "AI Berkshire 日本株スキルの入口: 日本株調査記事：著者・編集者・読者の3 Agent共同制作。"
 argument-hint: $ARGUMENTS
 ---
 

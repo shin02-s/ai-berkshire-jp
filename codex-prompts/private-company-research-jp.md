@@ -1,5 +1,5 @@
 ---
-description: "AI Berkshire 日本株スキルの入口: 日本の未上場企業研究。"
+description: "AI Berkshire 日本株スキルの入口: 日本の未上場企業研究：6 Agent並行の探偵型調査。"
 argument-hint: $ARGUMENTS
 ---
 

@@ -1,5 +1,5 @@
 ---
-description: "AI Berkshire 日本株スキルの入口: 日本株の総合投資研究。"
+description: "AI Berkshire 日本株スキルの入口: 日本株の総合投資研究：4つの価値投資視点による8段階分析。"
 argument-hint: $ARGUMENTS
 ---
 

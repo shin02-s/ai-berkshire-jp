@@ -1,5 +1,5 @@
 ---
-description: "AI Berkshire 日本株スキルの入口: 日本株の業界漏斗スクリーニング。"
+description: "AI Berkshire 日本株スキルの入口: 日本株の業界ファネル：全母集団から最大3社へ。"
 argument-hint: $ARGUMENTS
 ---
 
