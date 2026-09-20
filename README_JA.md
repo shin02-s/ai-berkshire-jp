@@ -14,7 +14,7 @@
 
 1人 + Claude Code / Codex = 投資リサーチチーム丸ごと。
 
-[実績](#実績) · [なぜAIに直接聞いてはいけないのか](#なぜaiに直接聞いてはいけないのか) · [Skill一覧](#skill一覧20スキル) · [クイックスタート](#クイックスタート) · [レポート](#実際のリサーチレポート) · [設計思想](#設計思想)
+[実績](#実績) · [なぜAIに直接聞いてはいけないのか](#なぜaiに直接聞いてはいけないのか) · [日本株版Skill](#日本株日本語版skill22スキル) · [既存Skill一覧](#既存skill一覧) · [クイックスタート](#クイックスタート) · [レポート](#実際のリサーチレポート) · [設計思想](#設計思想)
 
 ---
 
@@ -164,7 +164,66 @@ AIに直接聞けばコンテキストウィンドウは1つです。4つの並�
 
 ---
 
-## Skill一覧（20スキル）
+## 日本株・日本語版Skill（22スキル）
+
+既存Skillを残したまま、名前の末尾に `-jp` を付けた日本株・日本語版を追加しています。対象は東証プライム・スタンダード・グロースの内国普通株です。ETF、REIT、外国株は投資候補に含めません。海外企業への言及は、日本企業の競合・顧客・供給網を説明する場合に限ります。
+
+日本株版では、金額と評価を円／JPYに統一し、EDINET、有価証券報告書、決算短信、会社IR、TDnet、JPXを主要情報源にします。価格取得に使うYahoo Financeは補助情報として扱い、重要数値は一次資料と別経路で照合します。
+
+### 企業・決算リサーチ
+
+| Skill | 目的 |
+|-------|------|
+| [`/investment-research-jp`](skills/investment-research-jp.md) | 事業、競争優位、経営、ガバナンス、リスク、円建て評価を統合する日本株の総合調査 |
+| [`/investment-team-jp`](skills/investment-team-jp.md) | 事業・財務評価・経営ガバナンス・反対意見を独立に調べて統合するチーム調査 |
+| [`/management-deep-dive-jp`](skills/management-deep-dive-jp.md) | 経営陣を発言ではなく資本配分、目標実績、少数株主への公正さから評価 |
+| [`/deep-company-series-jp`](skills/deep-company-series-jp.md) | 一社の論点を3〜8本の記事へ分解し、段階的に理解できる連載を作成 |
+| [`/earnings-review-jp`](skills/earnings-review-jp.md) | 決算短信・説明資料・法定開示から業績の質、利益要因、通期計画を精読 |
+| [`/earnings-team-jp`](skills/earnings-team-jp.md) | 数値、事業、経営、反対意見の複数視点で決算を検証して投資仮説を更新 |
+| [`/private-company-research-jp`](skills/private-company-research-jp.md) | 日本の未上場企業を公開資料から調べ、東証上場企業への影響を評価 |
+
+### 業界探索・スクリーニング
+
+| Skill | 目的 |
+|-------|------|
+| [`/industry-research-jp`](skills/industry-research-jp.md) | 日本の業界構造、産業チェーン、利益プール、東証候補を調査 |
+| [`/industry-funnel-jp`](skills/industry-funnel-jp.md) | 業界の東証上場企業を段階的に除外し、深掘り候補を最大3社へ絞り込み |
+| [`/quality-screen-jp`](skills/quality-screen-jp.md) | 7つの品質基準で調査優先度の低い企業を素早く除外 |
+| [`/bottleneck-hunter-jp`](skills/bottleneck-hunter-jp.md) | 供給制約と価格決定力を特定し、恩恵を受ける日本企業を探索 |
+| [`/era-alpha-jp`](skills/era-alpha-jp.md) | 長期構造変化から超過価値を獲得できる日本企業を識別 |
+| [`/investment-checklist-jp`](skills/investment-checklist-jp.md) | 深掘り前に事業、財務、競争優位、経営、価格を短時間で点検 |
+
+### 保有管理・ニュース
+
+| Skill | 目的 |
+|-------|------|
+| [`/income-investment-jp`](skills/income-investment-jp.md) | 配当、DOE、自己株式取得、株主優待を分解し、分配の持続性を評価 |
+| [`/portfolio-review-jp`](skills/portfolio-review-jp.md) | 日本株ポートフォリオの仮説、集中、共通リスク、期待収益を更新 |
+| [`/thesis-tracker-jp`](skills/thesis-tracker-jp.md) | 決算や資本政策の変化後に投資仮説と撤回条件を定期更新 |
+| [`/thesis-drift-jp`](skills/thesis-drift-jp.md) | 過去の仮説と現在の事実を比較し、後付けや表現変更を検出 |
+| [`/news-pulse-jp`](skills/news-pulse-jp.md) | 株価異動を会社開示、政策・規制、業界、需給に分けて迅速に分析 |
+
+### データ・思考・編集
+
+| Skill | 目的 |
+|-------|------|
+| [`/financial-data-jp`](skills/financial-data-jp.md) | EDINET、会社IR、TDnet、JPXを中心に日本株データを取得・照合 |
+| [`/dyp-ask-jp`](skills/dyp-ask-jp.md) | 長期価値投資の原則から日本株の商売、経営者、価格、能力圏を問い直す |
+| [`/wechat-article-jp`](skills/wechat-article-jp.md) | 日本株調査を著者・編集者・読者の視点で公開可能な日本語記事へ編集 |
+| [`investment-memo-craft-jp`](codex-skills/investment-memo-craft-jp/SKILL.md) | 調査結果を事業の仕組み、反対意見、円建て評価、行動条件が明確なレポートへ整えるCodex専用Skill |
+
+### 日本株固有の確認事項
+
+- 政策保有株式、持合い、親子上場、支配株主、関連当事者取引、少数株主保護
+- 資本コストや株価を意識した経営、ROE・ROIC・PBR改善策の実行状況
+- 配当性向、DOE、累進配当、自己株式取得・消却、株主優待の区別
+- 日本基準／IFRS、連結／単体、株式分割、自己株式を含む会計・株式数の口径
+
+共通ツールは派生コピーを作らず、日本語オプションを追加して共有しています。日本株版では `financial_rigor.py --locale ja`、`report_audit.py --locale ja ... --market jp`、長期評価では `terminal_value.py --locale ja --currency JPY --rf {調査日の無リスク金利}` を使用します。
+
+---
+
+## 既存Skill一覧
 
 ### 🔬 深掘りリサーチ
 
