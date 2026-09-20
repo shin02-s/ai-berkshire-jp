@@ -1,5 +1,5 @@
 ---
-description: "AI Berkshire 日本株スキルの入口: 日本企業を理解する深度連載。"
+description: "AI Berkshire 日本株スキルの入口: 「会社を読み解く」深掘り連載（日本株版）。"
 argument-hint: $ARGUMENTS
 ---
 

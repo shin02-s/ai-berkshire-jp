@@ -1,5 +1,5 @@
 ---
-description: "AI Berkshire 日本株スキルの入口: 日本株の時代アルファ探索。"
+description: "AI Berkshire 日本株スキルの入口: 時代アルファ探索（日本株版）。"
 argument-hint: $ARGUMENTS
 ---
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "日本株リサーチレポート編集"
-  short_description: "日本株調査を判断可能な日本語レポートへ整える"
-  default_prompt: "$investment-memo-craft-jp を使って、この日本株調査を読みやすく判断可能なレポートへ仕上げてください。"
+  short_description: "日本株調査を反証と行動条件の明確なレポートへ整える"
+  default_prompt: "$investment-memo-craft-jp を使い、この日本株調査を、事業の仕組み、反証、円建て評価、未保有者・保有者別の行動条件が明確な日本語レポートへ仕上げてください。"
