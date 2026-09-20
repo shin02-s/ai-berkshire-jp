@@ -58,6 +58,28 @@ python3 tools/twstock_data.py search 台積        # 搜索股票代码（注意
 
 ---
 
+### 日本股（丰田7203、任天堂7974等）
+
+| 优先级 | 来源 | 用途 | 获取方式 |
+|---|---|---|---|
+| 1（正本） | **EDINET API v2** | 有价证券报告书、XBRL 财务数值、发行股数 | `tools/jpstock_data.py financials 7203` / `filings 7203` |
+| 2（价格补助） | **Yahoo Finance / yfinance** | 日线、成交量、分红、拆股、调整后价格 | `tools/jpstock_data.py quote 7203` / `prices 7203 --period 5y --adjusted` |
+| 3（交叉验证） | TDnet / 公司 IR | 决算短信与公司公告 | 直接访问原文 |
+
+**日本股取数工具**：
+
+```bash
+python tools/jpstock_data.py quote 7203
+python tools/jpstock_data.py prices 7203 --period 5y --adjusted
+python tools/jpstock_data.py financials 7203
+python tools/jpstock_data.py filings 7203 --years 5
+```
+
+EDINET 命令必须设置 `EDINET_API_KEY`。Windows 下运行
+`powershell -ExecutionPolicy Bypass -File scripts/set-edinet-api-key.ps1`，密钥将只保存为用户环境变量，不能写入报告、Git 或命令输出。yfinance 仅作价格数据补助，绝不能替代 EDINET 的财务正本。关键财务数值须用 TDnet 或公司 IR 做第二来源，并用 `financial_rigor.py cross-validate` 记录差异。
+
+---
+
 ## 执行规范
 
 ### 第一步：获取数据
@@ -150,3 +172,5 @@ python3 tools/twstock_data.py search 台積        # 搜索股票代码（注意
 | Capcom | macrotrends（CCOEY） | stockanalysis（CCOEY） |
 | 台积电 | tools/twstock_data.py（2330） | goodinfo.tw / macrotrends（TSM，注意1 ADR=5股） |
 | 联发科 | tools/twstock_data.py（2454） | goodinfo.tw |
+| 丰田 | tools/jpstock_data.py（7203）EDINET 财务 | TDnet / 丰田 IR |
+| 任天堂 | tools/jpstock_data.py（7974）EDINET 财务 | TDnet / 任天堂 IR |
