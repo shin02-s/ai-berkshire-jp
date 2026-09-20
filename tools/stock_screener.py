@@ -39,6 +39,7 @@ DEFAULT_WATCHLIST = {
     "us_crypto": ["COIN", "HOOD", "MSTR", "CRCL"],
     "hk_internet": ["0700.HK", "9888.HK", "1024.HK", "9992.HK"],
     "a_share": [],  # A股需要不同数据源，后续扩展
+    "jp_stock": [],  # 日本株は 7203.T の形式で追加。価格は jpstock_data.py 経由。
 }
 
 # ============================================================
@@ -47,6 +48,22 @@ DEFAULT_WATCHLIST = {
 
 def fetch_prices_curl(ticker, days=120):
     """用curl获取Yahoo Finance日线数据"""
+    if ticker.endswith(".T"):
+        # 日本株は jpstock_data.py と同じ yfinance 設定・ローカルキャッシュを使う。
+        from jpstock_data import _ticker
+        try:
+            history = _ticker(ticker).history(
+                start=datetime.now() - timedelta(days=days), auto_adjust=False
+            )
+            rows = [
+                {"date": idx.strftime("%Y-%m-%d"), "close": row["Close"],
+                 "high": row["High"], "volume": row["Volume"]}
+                for idx, row in history.iterrows()
+                if row["Close"] and row["High"] and row["Volume"]
+            ]
+            return rows if len(rows) > 60 else None
+        except Exception:
+            return None
     end_ts = int(datetime.now().timestamp())
     start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
     url = (
@@ -304,11 +321,12 @@ def scan_ticker(ticker, verbose=True):
     if verbose:
         # 紧凑输出
         m = momentum
+        currency = "¥" if ticker.endswith(".T") else "$"
         symbol = {"BUY_8%": "🔴", "BUY_5%": "🟡", "BUY_3%": "🟢", "WATCH": "👀", "PASS": "⬜", "SKIP": "  "}
         s = symbol.get(grade, "  ")
 
         if grade.startswith("BUY"):
-            print(f"  {s} {ticker:<8} ${m['close']:<8} 30日+{m['pct_30d']}% 放量{m['vol_ratio']}x  → {grade} {reason}")
+            print(f"  {s} {ticker:<8} {currency}{m['close']:<8} 30日+{m['pct_30d']}% 放量{m['vol_ratio']}x  → {grade} {reason}")
             if value:
                 v = value
                 checks_str = " ".join(f"{'✅' if val else '❌'}{k}" for k, val in v["checks"].items())
@@ -317,9 +335,9 @@ def scan_ticker(ticker, verbose=True):
                 if v["independent_pass"]:
                     print(f"     ★独立通过：{v['independent_reason']}")
         elif grade == "WATCH":
-            print(f"  {s} {ticker:<8} ${m['close']:<8} 30日+{m['pct_30d']}%  → 动量触发！需补充基本面数据")
+            print(f"  {s} {ticker:<8} {currency}{m['close']:<8} 30日+{m['pct_30d']}%  → 动量触发！需补充基本面数据")
         elif grade == "PASS":
-            print(f"  {s} {ticker:<8} ${m['close']:<8}  → {reason}")
+            print(f"  {s} {ticker:<8} {currency}{m['close']:<8}  → {reason}")
         # SKIP不输出
 
     return result
@@ -382,7 +400,8 @@ def main():
         print(f"\n  🎯 买入信号：{len(buy_signals)} 个")
         for s in sorted(buy_signals, key=lambda x: x["grade"], reverse=True):
             m = s["momentum"]
-            print(f"     {s['grade']:<8} {s['ticker']:<8} ${m['close']:<8} {s['reason']}")
+            currency = "¥" if s["ticker"].endswith(".T") else "$"
+            print(f"     {s['grade']:<8} {s['ticker']:<8} {currency}{m['close']:<8} {s['reason']}")
     else:
         print(f"\n  无买入信号")
 
@@ -390,7 +409,8 @@ def main():
         print(f"\n  👀 观察（需补基本面）：{len(watch_signals)} 个")
         for s in watch_signals:
             m = s["momentum"]
-            print(f"     {s['ticker']:<8} ${m['close']:<8} 30日+{m['pct_30d']}% — 请用 --update {s['ticker']} 补充")
+            currency = "¥" if s["ticker"].endswith(".T") else "$"
+            print(f"     {s['ticker']:<8} {currency}{m['close']:<8} 30日+{m['pct_30d']}% — 请用 --update {s['ticker']} 补充")
 
     print(f"\n  基本面数据文件：{FUND_FILE}")
     print(f"  Watchlist文件：{WATCHLIST_FILE}")
