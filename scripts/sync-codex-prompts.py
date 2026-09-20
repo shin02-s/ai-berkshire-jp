@@ -15,6 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 CLAUDE_SKILLS = ROOT / "skills"
 CODEX_PROMPTS = ROOT / "codex-prompts"
 
+# Preserve the published legacy prompt text even though its source heading was
+# later expanded. Japanese variants always use their current source heading.
+LEGACY_TITLES = {
+    "deep-company-series": "深度公司系列：8 篇长文拆一家公司",
+}
+
 
 def split_frontmatter(text: str):
     if not text.startswith("---\n"):
@@ -39,20 +45,37 @@ def yaml_quote(value: str) -> str:
 
 def prompt_for(source: Path) -> str:
     name = source.stem
+    is_jp = name.endswith("-jp")
     source_text = source.read_text(encoding="utf-8")
     _, body = split_frontmatter(source_text)
     title = first_heading(body, name)
-    description = f"AI Berkshire slash entry for {title}."
+    if not is_jp:
+        title = LEGACY_TITLES.get(name, title)
+    description = (
+        f"AI Berkshire 日本株スキルの入口: {title}。"
+        if is_jp
+        else f"AI Berkshire slash entry for {title}."
+    )
+    if is_jp:
+        instruction = (
+            f"この依頼にはAI Berkshire Codexスキル `{name}` を使用してください。\n\n"
+            f"未読の場合は `~/ai-berkshire/codex-skills/{name}/SKILL.md` を読み、従ってください。\n\n"
+            "ユーザー引数:\n"
+        )
+    else:
+        instruction = (
+            f"Use the installed AI Berkshire Codex skill `{name}` for this request.\n\n"
+            f"If the skill is not already loaded, read and follow "
+            f"`~/ai-berkshire/codex-skills/{name}/SKILL.md`.\n\n"
+            "User arguments:\n"
+        )
     return (
         "---\n"
         f"description: {yaml_quote(description)}\n"
         "argument-hint: $ARGUMENTS\n"
         "---\n\n"
-        f"Use the installed AI Berkshire Codex skill `{name}` for this request.\n\n"
-        f"If the skill is not already loaded, read and follow "
-        f"`~/ai-berkshire/codex-skills/{name}/SKILL.md`.\n\n"
-        "User arguments:\n"
-        "$ARGUMENTS\n"
+        + instruction
+        + "$ARGUMENTS\n"
     )
 
 

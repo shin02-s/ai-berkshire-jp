@@ -35,6 +35,7 @@ def yaml_quote(value: str) -> str:
 
 
 def metadata_for(name: str, source_name: str, source_text: str) -> str:
+    is_jp = name.endswith("-jp")
     existing, body = split_frontmatter(source_text)
     if existing:
         has_name = re.search(r"(?m)^name:\s*", existing) is not None
@@ -44,15 +45,24 @@ def metadata_for(name: str, source_name: str, source_text: str) -> str:
             lines.append(f"name: {name}")
         if not has_description:
             title = first_heading(body, name)
+            description = (
+                f"AI Berkshire 日本株スキル: {title}。生成元: skills/{source_name}。"
+                if is_jp
+                else f"AI Berkshire skill: {title}. Source: skills/{source_name}."
+            )
             lines.append(
                 "description: "
-                + yaml_quote(f"AI Berkshire skill: {title}. Source: skills/{source_name}.")
+                + yaml_quote(description)
             )
         lines.append(existing.rstrip())
         return "---\n" + "\n".join(lines) + "\n---\n\n"
 
     title = first_heading(source_text, name)
-    description = f"AI Berkshire skill: {title}. Source: skills/{source_name}."
+    description = (
+        f"AI Berkshire 日本株スキル: {title}。生成元: skills/{source_name}。"
+        if is_jp
+        else f"AI Berkshire skill: {title}. Source: skills/{source_name}."
+    )
     return (
         "---\n"
         f"name: {name}\n"
@@ -63,29 +73,41 @@ def metadata_for(name: str, source_name: str, source_text: str) -> str:
 
 def codex_body(name: str, source_name: str, source_text: str) -> str:
     _, body = split_frontmatter(source_text)
-    note = (
-        "## Codex adapter note\n\n"
-        f"This skill is generated from `skills/{source_name}` so Claude Code "
-        "and Codex users share one canonical workflow.\n\n"
-        "- Treat `$ARGUMENTS` as the user's request in the current Codex thread.\n"
-        "- When the source mentions Claude-only surfaces such as Task, Agent, "
-        "WebSearch, Bash, Read, or Write, use the closest Codex capability "
-        "available in this session: subagents when available, web search when "
-        "needed, shell commands for local tools, and normal file edits for "
-        "workspace files.\n"
-        "- Use shared project tools from `tools/` in this repository. Prefer "
-        "running commands from the repository root with paths like "
-        "`python3 tools/financial_rigor.py ...`; if the current thread starts "
-        "outside the repo, locate the actual checkout path first instead of "
-        "assuming a fixed home-directory path.\n"
-        "- Before starting research, run the `date` command to confirm "
-        "today's date; treat it as the baseline for \"latest\" data and state "
-        "the data cutoff date in the report header. Never assume the current "
-        "date from training data.\n"
-        "- Preserve the research quality rules from `AGENTS.md`: cross-check "
-        "financial data, use exact arithmetic tools for valuation/math, and "
-        "clearly label uncertainty and source gaps.\n\n"
-    )
+    if name.endswith("-jp"):
+        note = (
+            "## Codexアダプター注記\n\n"
+            f"このスキルは `skills/{source_name}` から生成され、Claude Code とCodexで正本を共有する。\n\n"
+            "- `$ARGUMENTS` は現在のCodexタスクにおけるユーザー依頼として扱う。\n"
+            "- 利用できる検索、シェル、ファイル編集機能を使い、必要な調査と検証を行う。\n"
+            "- 共通ツールはリポジトリ直下から実行し、日本版では `--locale ja`、"
+            "必要に応じて `--market jp` / `--currency JPY` を付ける。\n"
+            "- 調査前に `date` で当日を確認し、データ基準日をレポート冒頭に記載する。\n"
+            "- `AGENTS.md` の品質規則に従い、財務数値の照合、正確な計算、欠損と不確実性を明示する。\n\n"
+        )
+    else:
+        note = (
+            "## Codex adapter note\n\n"
+            f"This skill is generated from `skills/{source_name}` so Claude Code "
+            "and Codex users share one canonical workflow.\n\n"
+            "- Treat `$ARGUMENTS` as the user's request in the current Codex thread.\n"
+            "- When the source mentions Claude-only surfaces such as Task, Agent, "
+            "WebSearch, Bash, Read, or Write, use the closest Codex capability "
+            "available in this session: subagents when available, web search when "
+            "needed, shell commands for local tools, and normal file edits for "
+            "workspace files.\n"
+            "- Use shared project tools from `tools/` in this repository. Prefer "
+            "running commands from the repository root with paths like "
+            "`python3 tools/financial_rigor.py ...`; if the current thread starts "
+            "outside the repo, locate the actual checkout path first instead of "
+            "assuming a fixed home-directory path.\n"
+            "- Before starting research, run the `date` command to confirm "
+            "today's date; treat it as the baseline for \"latest\" data and state "
+            "the data cutoff date in the report header. Never assume the current "
+            "date from training data.\n"
+            "- Preserve the research quality rules from `AGENTS.md`: cross-check "
+            "financial data, use exact arithmetic tools for valuation/math, and "
+            "clearly label uncertainty and source gaps.\n\n"
+        )
     return note + body.rstrip() + "\n"
 
 

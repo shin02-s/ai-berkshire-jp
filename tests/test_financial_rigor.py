@@ -113,6 +113,40 @@ class TestMarketCapMathUnaffected(unittest.TestCase):
     def test_gross_mismatch_returns_false(self):
         self.assertFalse(F.verify_market_cap(8.00, 500000000, 40.00, 'CNY'))
 
+    def test_jpy_large_number_format(self):
+        self.assertEqual(F.fmt_currency(F.exact('4564000000000'), 'JPY'), '4.56兆円')
+
+    def test_japanese_cli_with_jpy(self):
+        proc = _run(['--locale', 'ja', 'verify-market-cap', '--price', '2800',
+                     '--shares', '1630000000', '--reported', '4564000000000',
+                     '--currency', 'JPY'], encoding='cp932')
+        self.assertEqual(proc.returncode, 0)
+        out = proc.stdout.decode('utf-8', 'replace')
+        self.assertIn('時価総額の検算', out)
+        self.assertIn('兆円', out)
+
+    def test_japanese_valuation_and_three_scenario(self):
+        valuation = _run([
+            '--locale', 'ja', 'verify-valuation', '--price', '2800',
+            '--eps', '210', '--bvps', '1850', '--dividend', '75',
+        ], encoding='cp932')
+        self.assertEqual(valuation.returncode, 0)
+        valuation_out = valuation.stdout.decode('utf-8', 'replace')
+        self.assertIn('評価指標の検算', valuation_out)
+        self.assertIn('PE (TTM)', valuation_out)
+        self.assertIn('PB:', valuation_out)
+
+        scenario = _run([
+            '--locale', 'ja', 'three-scenario', '--price', '2800',
+            '--eps', '210', '--shares', '16.3', '--growth', '0.10', '0.05', '-0.03',
+            '--pe', '18', '14', '10', '--currency', 'JPY',
+        ], encoding='cp932')
+        self.assertEqual(scenario.returncode, 0)
+        scenario_out = scenario.stdout.decode('utf-8', 'replace')
+        self.assertIn('三情景評価モデル', scenario_out)
+        self.assertIn('強気', scenario_out)
+        self.assertIn('弱気', scenario_out)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

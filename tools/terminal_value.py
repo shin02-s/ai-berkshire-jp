@@ -50,6 +50,12 @@ import argparse
 import json
 import sys
 
+_LOCALE = "zh"
+
+
+def _t(zh: str, ja: str) -> str:
+    return ja if _LOCALE == "ja" else zh
+
 # ---------------------------------------------------------------------------
 # 输出编码：Windows 控制台默认 GBK，本工具的 ⚠ / ✓ 会抛 UnicodeEncodeError
 # ---------------------------------------------------------------------------
@@ -128,13 +134,17 @@ CURRENCY_BANDS = {
                 note="美国10年期国债 4.70% + 中国总ERP 5.18%（含1.01%国别溢价）"),
     "HKD": dict(r=(0.09, 0.115), g_max=0.040, rf=0.0470,
                 note="港币与美元挂钩，口径同 USD"),
+    # JPY has no embedded live risk-free rate. Callers must supply --rf from a
+    # dated official source so a changing market input never becomes a silent default.
+    "JPY": dict(r=None, g_max=0.020, rf=None,
+                note="日本円口径。無リスク金利は調査日の公式値を --rf で指定"),
 }
 
 # 离散风险的合法归属。写进折现率或 beta 一律打回——抬 r 三个百分点对第 10 年现金流的
 # 惩罚是第 1 年的 2.6 倍，而退市/断供是大致均匀甚至前置的年度危害率，会把时间分布搞反。
-RISK_PLACEMENT_OK = {"情景", "尾部档", "概率"}
-RISK_PLACEMENT_BAD = {"折现率", "r", "beta", "β"}
-RISK_PLACEMENT_WARN = {"未建模"}
+RISK_PLACEMENT_OK = {"情景", "尾部档", "概率", "シナリオ", "テールケース", "確率"}
+RISK_PLACEMENT_BAD = {"折现率", "割引率", "r", "beta", "β"}
+RISK_PLACEMENT_WARN = {"未建模", "未反映"}
 
 # ---------------------------------------------------------------------------
 # 核心计算
@@ -226,9 +236,9 @@ def load_companies(path):
 def warn_spread(spread):
     """分母宽度体检标记。"""
     if spread <= 0:
-        return "✗失效"
+        return _t("✗失效", "✗無効")
     if spread < MIN_SPREAD:
-        return "⚠窄"
+        return _t("⚠窄", "⚠不足")
     return ""
 
 # ---------------------------------------------------------------------------
@@ -238,15 +248,21 @@ def warn_spread(spread):
 
 def cmd_pe(args):
     pe, retention, numerator, spread = exit_pe(args.roic, args.g, args.r)
-    print(f"\nPE(终值) = (1 - g/ROIC) / (r - g)\n")
+    print(_t("\nPE(终值) = (1 - g/ROIC) / (r - g)\n", "\n終値PER = (1 - g/ROIC) / (r - g)\n"))
     print(f"  ROIC = {args.roic:.1%}   g = {args.g:.2%}   r = {args.r:.2%}\n")
-    print(f"  留存率 g/ROIC   = {args.g:.4f} / {args.roic:.2f} = {retention:.4f}  ({retention:.1%})")
-    print(f"  分子 1 - 留存率 = {numerator:.4f}                    （即派息率 {numerator:.1%}）")
-    print(f"  分母 r - g      = {args.r:.4f} - {args.g:.4f} = {spread:.4f}  ({spread*100:.1f}pct)")
+    print(_t(
+        f"  留存率 g/ROIC   = {args.g:.4f} / {args.roic:.2f} = {retention:.4f}  ({retention:.1%})",
+        f"  再投資率 g/ROIC = {args.g:.4f} / {args.roic:.2f} = {retention:.4f}  ({retention:.1%})"))
+    print(_t(
+        f"  分子 1 - 留存率 = {numerator:.4f}                    （即派息率 {numerator:.1%}）",
+        f"  分子 1 - 再投資率 = {numerator:.4f}                 （分配可能率 {numerator:.1%}）"))
+    print(_t(
+        f"  分母 r - g      = {args.r:.4f} - {args.g:.4f} = {spread:.4f}  ({spread*100:.1f}pct)",
+        f"  分母 r - g        = {args.r:.4f} - {args.g:.4f} = {spread:.4f}  ({spread*100:.1f}pt)"))
     if pe is None:
-        print(f"\n  ✗ 分母 <= 0，模型失效。g 必须小于 r。\n")
+        print(_t("\n  ✗ 分母 <= 0，模型失效。g 必须小于 r。\n", "\n  ✗ 分母 <= 0。gは r より小さくしてください。\n"))
         return 1
-    print(f"\n  退出 PE = {numerator:.4f} / {spread:.4f} = {pe:.1f}x\n")
+    print(_t(f"\n  退出 PE = {numerator:.4f} / {spread:.4f} = {pe:.1f}x\n", f"\n  終値PER = {numerator:.4f} / {spread:.4f} = {pe:.1f}x\n"))
     if spread < MIN_SPREAD:
         print(f"  ⚠ 分母仅 {spread*100:.1f}pct，低于 {MIN_SPREAD*100:.0f}pct 有效性下限。")
         bumped, _, _, _ = exit_pe(args.roic, args.g + 0.005, args.r)
@@ -402,103 +418,164 @@ def cmd_audit(args):
     """三条硬约束的准出检查。任一条不过 → 【打回】，退出码 1。"""
     band = CURRENCY_BANDS.get(args.currency.upper())
     if band is None:
-        print(f"未知币种 {args.currency}，可选：{'、'.join(CURRENCY_BANDS)}", file=sys.stderr)
+        print(_t(
+            f"未知币种 {args.currency}，可选：{'、'.join(CURRENCY_BANDS)}",
+            f"不明な通貨 {args.currency} です。選択肢：{'、'.join(CURRENCY_BANDS)}"),
+            file=sys.stderr)
+        return 1
+    currency = args.currency.upper()
+    if currency == "JPY" and args.rf is None:
+        print(_t(
+            "JPY 必须显式提供 --rf（不内置可变的无风险利率）",
+            "JPYでは調査日の公式な無リスク金利を --rf で指定してください。"),
+            file=sys.stderr)
         return 1
     gs = [float(x) for x in args.g.split(",")]
     fails, warns = [], []
 
-    print(f"\n{'='*72}\n估值口径准出检查   币种={args.currency.upper()}   r={args.r:.2%}   "
+    title = _t("估值口径准出检查", "評価前提の監査")
+    currency_label = _t("币种", "通貨")
+    print(f"\n{'='*72}\n{title}   {currency_label}={args.currency.upper()}   r={args.r:.2%}   "
           f"ROIC={args.roic:.0%}   g={'/'.join(f'{x:.1%}' for x in gs)}\n{'='*72}")
 
     # --- C1 币种一致性：r 与 g 必须同币种 -----------------------------------
-    lo, hi = band["r"]
-    print(f"\n【C1】币种一致性 — r 与 g 必须用同一个币种")
-    print(f"     {args.currency.upper()} 口径基准：{band['note']}")
-    print(f"     r 合理区间 [{lo:.1%}, {hi:.1%}]   g 上限 {band['g_max']:.1%}   Rf {band['rf']:.2%}")
-    if not (lo <= args.r <= hi):
+    r_band = band["r"]
+    print(_t(
+        "\n【C1】币种一致性 — r 与 g 必须用同一个币种",
+        "\n【C1】通貨の整合性 — rとgは同一通貨で設定する"))
+    print(_t(
+        f"     {args.currency.upper()} 口径基准：{band['note']}",
+        f"     {args.currency.upper()} の基準：{band['note']}"))
+    if r_band is None:
+        print(_t(
+            f"     r 由用户输入   g 上限 {band['g_max']:.1%}   Rf {args.rf:.2%}",
+            f"     rは明示入力   g上限 {band['g_max']:.1%}   Rf {args.rf:.2%}"))
+        if args.r <= args.rf:
+            fails.append(f"C1: r={args.r:.2%} は無リスク金利 {args.rf:.2%} 以下")
+    else:
+        lo, hi = r_band
+        print(_t(
+            f"     r 合理区间 [{lo:.1%}, {hi:.1%}]   g 上限 {band['g_max']:.1%}   Rf {band['rf']:.2%}",
+            f"     rの目安 [{lo:.1%}, {hi:.1%}]   g上限 {band['g_max']:.1%}   Rf {band['rf']:.2%}"))
+    if r_band is not None and not (lo <= args.r <= hi):
         other = [c for c, b in CURRENCY_BANDS.items()
-                 if c != args.currency.upper() and b["r"][0] <= args.r <= b["r"][1]]
-        hint = f"（这个 r 落在 {'/'.join(other)} 的区间里——是不是拿错币种了？）" if other else ""
-        fails.append(f"C1: r={args.r:.2%} 不在 {args.currency.upper()} 的 [{lo:.1%},{hi:.1%}] 区间内 {hint}")
+                 if c != args.currency.upper() and b["r"] is not None
+                 and b["r"][0] <= args.r <= b["r"][1]]
+        hint = _t(
+            f"（这个 r 落在 {'/'.join(other)} 的区间里——是不是拿错币种了？）",
+            f"（このrは {'/'.join(other)} の範囲です。通貨を取り違えていないか確認してください）") if other else ""
+        fails.append(_t(
+            f"C1: r={args.r:.2%} 不在 {args.currency.upper()} 的 [{lo:.1%},{hi:.1%}] 区间内 {hint}",
+            f"C1: r={args.r:.2%} は {args.currency.upper()} の目安 [{lo:.1%},{hi:.1%}] 外です {hint}"))
     # g 上限卡在基准档。乐观档按设计是基准 +1pct，故额外放宽 1pct。
     g_base = gs[1] if len(gs) >= 2 else gs[0]
     if g_base > band["g_max"] or max(gs) > band["g_max"] + 0.01:
         other = [c for c, b in CURRENCY_BANDS.items()
                  if c != args.currency.upper() and g_base <= b["g_max"]]
-        hint = (f"（这是 {'/'.join(other)} 的量级——r 用了本币而 g 用了外币，"
-                f"正是最常见的口径混用）") if other else ""
-        fails.append(f"C1: 基准档 g={g_base:.1%} 超过 {args.currency.upper()} 上限 "
-                     f"{band['g_max']:.1%}（乐观档另放宽 1pct 至 {band['g_max']+0.01:.1%}）{hint}")
-    if args.rf is not None and abs(args.rf - band["rf"]) > 0.005:
-        fails.append(f"C1: 无风险利率 {args.rf:.2%} 与 {args.currency.upper()} 的 {band['rf']:.2%} 不符")
-    print(f"     → {'✗ 不通过' if any(f.startswith('C1') for f in fails) else '✓ 通过'}")
+        hint = _t(
+            f"（这是 {'/'.join(other)} 的量级——r 用了本币而 g 用了外币，正是最常见的口径混用）",
+            f"（これは {'/'.join(other)} の水準です。rとgの通貨前提を確認してください）") if other else ""
+        fails.append(_t(
+            f"C1: 基准档 g={g_base:.1%} 超过 {args.currency.upper()} 上限 "
+            f"{band['g_max']:.1%}（乐观档另放宽 1pct 至 {band['g_max']+0.01:.1%}）{hint}",
+            f"C1: 基準シナリオのg={g_base:.1%} が {args.currency.upper()} の上限 "
+            f"{band['g_max']:.1%} を超えています（強気は1pt上乗せした {band['g_max']+0.01:.1%} まで）{hint}"))
+    if band["rf"] is not None and args.rf is not None and abs(args.rf - band["rf"]) > 0.005:
+        fails.append(_t(
+            f"C1: 无风险利率 {args.rf:.2%} 与 {args.currency.upper()} 的 {band['rf']:.2%} 不符",
+            f"C1: 無リスク金利 {args.rf:.2%} が {args.currency.upper()} の基準 {band['rf']:.2%} と整合しません"))
+    print(f"     → {_t('✗ 不通过', '✗ 不合格') if any(f.startswith('C1') for f in fails) else _t('✓ 通过', '✓ 合格')}")
 
     # --- C2 分母宽度 ---------------------------------------------------------
-    print(f"\n【C2】分母宽度 — r-g 至少 {MIN_SPREAD*100:.0f} 个百分点")
+    print(_t(
+        f"\n【C2】分母宽度 — r-g 至少 {MIN_SPREAD*100:.0f} 个百分点",
+        f"\n【C2】分母の幅 — r-gを最低 {MIN_SPREAD*100:.0f} ポイント確保する"))
     narrow = []
     for label, g in zip(LABELS, gs):
         pe, _, _, spread = exit_pe(args.roic, g, args.r)
         bumped, _, _, _ = exit_pe(args.roic, g + 0.005, args.r)
         tag = warn_spread(spread)
         delta = f"  g+0.5pct → {bumped:.1f}x ({bumped/pe-1:+.0%})" if (pe and bumped) else ""
-        pe_s = f"{pe:.1f}x" if pe else "模型失效"
+        pe_s = f"{pe:.1f}x" if pe else _t("模型失效", "モデル無効")
         print(f"     {label}  g={g:>5.1%}  r-g={spread*100:>4.1f}pct  PE={pe_s:>10}{delta}  {tag}")
         if spread <= 0:
-            fails.append(f"C2: {label}档 r-g={spread*100:.1f}pct <= 0，模型失效")
+            fails.append(_t(
+                f"C2: {label}档 r-g={spread*100:.1f}pct <= 0，模型失效",
+                f"C2: {label}シナリオの r-g={spread*100:.1f}pt <= 0 のためモデルは無効です"))
         elif spread < MIN_SPREAD:
             narrow.append(label)
     if narrow:
         if args.upside_only:
-            warns.append(f"C2: {'/'.join(narrow)}档分母不足 {MIN_SPREAD*100:.0f}pct，"
-                         f"已声明 --upside-only，仅可作情景参考")
+            warns.append(_t(
+                f"C2: {'/'.join(narrow)}档分母不足 {MIN_SPREAD*100:.0f}pct，已声明 --upside-only，仅可作情景参考",
+                f"C2: {'/'.join(narrow)}の分母が {MIN_SPREAD*100:.0f}pt 未満です。--upside-only 指定により参考シナリオに限定します"))
         else:
-            fails.append(f"C2: {'/'.join(narrow)}档分母不足 {MIN_SPREAD*100:.0f}pct。"
-                         f"要么调窄 g，要么加 --upside-only 声明这是情景而非估值")
-    print(f"     → {'✗ 不通过' if any(f.startswith('C2') for f in fails) else '✓ 通过'}")
+            fails.append(_t(
+                f"C2: {'/'.join(narrow)}档分母不足 {MIN_SPREAD*100:.0f}pct。要么调窄 g，要么加 --upside-only 声明这是情景而非估值",
+                f"C2: {'/'.join(narrow)}の分母が {MIN_SPREAD*100:.0f}pt 未満です。gを下げるか、--upside-only で評価値ではなく参考シナリオと明示してください"))
+    print(f"     → {_t('✗ 不通过', '✗ 不合格') if any(f.startswith('C2') for f in fails) else _t('✓ 通过', '✓ 合格')}")
 
     # --- C3 离散风险归属 -----------------------------------------------------
-    print(f"\n【C3】离散风险归属 — 退市/VIE/地缘/监管必须归情景，不得进 r 或 β")
+    print(_t(
+        "\n【C3】离散风险归属 — 退市/VIE/地缘/监管必须归情景，不得进 r 或 β",
+        "\n【C3】離散リスクの配置 — シナリオまたは確率に置き、rやβへ混ぜない"))
     if args.beta != 1.0 and not args.beta_justification:
-        fails.append(f"C3: β={args.beta} 偏离 1.0 但未给 --beta-justification。"
-                     f"回归 β 的标准误就有 ±0.2-0.3，调它必须说明用的是自下而上的基本面 β")
+        fails.append(_t(
+            f"C3: β={args.beta} 偏离 1.0 但未给 --beta-justification。回归 β 的标准误就有 ±0.2-0.3，调它必须说明用的是自下而上的基本面 β",
+            f"C3: β={args.beta} は1.0から乖離していますが --beta-justification がありません。調整根拠を明示してください"))
     for item in [x for x in args.discrete_risks.split(",") if x.strip()]:
         if ":" not in item:
-            fails.append(f"C3: '{item}' 格式应为 风险名:归属")
+            fails.append(_t(
+                f"C3: '{item}' 格式应为 风险名:归属",
+                f"C3: '{item}' は リスク名:配置 の形式で指定してください"))
             continue
         name, place = (p.strip() for p in item.split(":", 1))
         if place in RISK_PLACEMENT_BAD:
-            fails.append(f"C3: 「{name}」被放进了 {place}。抬 r 对第10年现金流的惩罚是第1年的 2.6 倍，"
-                         f"而这类风险是均匀甚至前置的年度危害率——会把风险的时间分布搞反")
+            fails.append(_t(
+                f"C3: 「{name}」被放进了 {place}。抬 r 对第10年现金流的惩罚是第1年的 2.6 倍，而这类风险是均匀甚至前置的年度危害率——会把风险的时间分布搞反",
+                f"C3: 「{name}」が{place}に置かれています。割引率への上乗せはリスクの発生時点を歪めるため、シナリオまたは確率で扱ってください"))
             mark = "✗"
         elif place in RISK_PLACEMENT_WARN:
-            warns.append(f"C3: 「{name}」未建模，必须写进报告的「限制」章节")
+            warns.append(_t(
+                f"C3: 「{name}」未建模，必须写进报告的「限制」章节",
+                f"C3: 「{name}」は未反映です。レポートの制約事項に明記してください"))
             mark = "⚠"
         elif place in RISK_PLACEMENT_OK:
             mark = "✓"
         else:
-            fails.append(f"C3: 「{name}」的归属 '{place}' 无法识别，"
-                         f"合法值：{'/'.join(sorted(RISK_PLACEMENT_OK | RISK_PLACEMENT_WARN))}")
+            fails.append(_t(
+                f"C3: 「{name}」的归属 '{place}' 无法识别，合法值：{'/'.join(sorted(RISK_PLACEMENT_OK | RISK_PLACEMENT_WARN))}",
+                f"C3: 「{name}」の配置 '{place}' を認識できません。指定可能：シナリオ/テールケース/確率/未反映"))
             mark = "✗"
         print(f"     {mark} {name} → {place}")
     if args.beta == 1.0:
-        print(f"     β = 1.0（默认值，无需理由）")
+        print(_t("     β = 1.0（默认值，无需理由）", "     β = 1.0（既定値、理由は不要）"))
     else:
-        print(f"     β = {args.beta}（理由：{args.beta_justification or '未给出'}）")
-    print(f"     → {'✗ 不通过' if any(f.startswith('C3') for f in fails) else '✓ 通过'}")
+        reason = args.beta_justification or _t("未给出", "未指定")
+        print(f"     β = {args.beta}（{_t('理由', '理由')}：{reason}）")
+    print(f"     → {_t('✗ 不通过', '✗ 不合格') if any(f.startswith('C3') for f in fails) else _t('✓ 通过', '✓ 合格')}")
 
     # --- 判决 ----------------------------------------------------------------
     print(f"\n{'='*72}")
     for w in warns:
         print(f"⚠ {w}")
     if fails:
-        print(f"\n【打回】{len(fails)} 项不通过：\n")
+        print(_t(
+            f"\n【打回】{len(fails)} 项不通过：\n",
+            f"\n【差し戻し】{len(fails)}件が不合格です：\n"))
         for i, msg in enumerate(fails, 1):
             print(f"  {i}. {msg}")
-        print(f"\n修正后重跑本命令，通过才能把估值写进报告。\n")
+        print(_t(
+            "\n修正后重跑本命令，通过才能把估值写进报告。\n",
+            "\n修正後に再実行し、合格してから評価をレポートへ記載してください。\n"))
         return 1
-    print(f"\n【准出】三条硬约束全部通过，可以把估值写进报告。")
+    print(_t(
+        "\n【准出】三条硬约束全部通过，可以把估值写进报告。",
+        "\n【合格】3つの必須条件をすべて満たしました。評価をレポートへ記載できます。"))
     if warns:
-        print(f"       但上述 {len(warns)} 条警告必须在报告里显式写出。")
+        print(_t(
+            f"       但上述 {len(warns)} 条警告必须在报告里显式写出。",
+            f"       ただし上記{len(warns)}件の警告はレポートに明記してください。"))
     print()
     return 0
 
@@ -507,12 +584,14 @@ def cmd_irr(args):
     irr = irr_from_terminal(args.profit, args.mcap, args.pe, args.years, args.payout)
     terminal = args.profit * args.pe
     mult = terminal / args.mcap
-    print(f"\nIRR = (2036市值 / 今日市值)^(1/{args.years}) - 1 + 股息率 - 稀释率\n")
-    print(f"  2036 市值 = {args.profit:,.0f} x {args.pe:.1f}x = {terminal:,.0f}")
-    print(f"  今日市值 = {args.mcap:,.0f}")
-    print(f"  总倍数   = {mult:.4f}")
-    print(f"  几何年化 = {mult ** (1.0/args.years) - 1:+.2%}")
-    print(f"  股息-稀释 = {args.payout:+.2%}")
+    print(_t(
+        f"\nIRR = (2036市值 / 今日市值)^(1/{args.years}) - 1 + 股息率 - 稀释率\n",
+        f"\nIRR = (終値時価総額 / 現在時価総額)^(1/{args.years}) - 1 + 配当率 - 希薄化率\n"))
+    print(_t(f"  2036 市值 = {args.profit:,.0f} x {args.pe:.1f}x = {terminal:,.0f}", f"  終値時価総額 = {args.profit:,.0f} x {args.pe:.1f}x = {terminal:,.0f}"))
+    print(_t(f"  今日市值 = {args.mcap:,.0f}", f"  現在時価総額 = {args.mcap:,.0f}"))
+    print(_t(f"  总倍数   = {mult:.4f}", f"  総倍率 = {mult:.4f}"))
+    print(_t(f"  几何年化 = {mult ** (1.0/args.years) - 1:+.2%}", f"  幾何年率 = {mult ** (1.0/args.years) - 1:+.2%}"))
+    print(_t(f"  股息-稀释 = {args.payout:+.2%}", f"  配当-希薄化 = {args.payout:+.2%}"))
     print(f"\n  IRR = {irr:+.2%}\n")
     return 0
 
@@ -520,10 +599,13 @@ def cmd_irr(args):
 
 
 def main():
+    global _LOCALE, LABELS
     parser = argparse.ArgumentParser(
         description="终值倍数与十年 IRR 推演（永续增长模型）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__.split("用法：")[-1])
+    parser.add_argument("--locale", choices=("zh", "ja"), default="zh",
+                        help="出力言語 / 输出语言")
     sub = parser.add_subparsers(dest="cmd")
 
     def add_common(p, need_r=True):
@@ -562,7 +644,7 @@ def main():
     p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("audit", help="三条硬约束准出检查（【准出】/【打回】）")
-    p.add_argument("--currency", required=True, help="现金流币种：CNY / USD / HKD")
+    p.add_argument("--currency", required=True, help="现金流币种：CNY / USD / HKD / JPY")
     p.add_argument("--r", type=float, required=True, help="资本成本，小数")
     p.add_argument("--roic", type=float, required=True, help="2036 稳态增量 ROIC，小数")
     p.add_argument("--g", required=True, help="三档永续增速，逗号分隔，如 0.005,0.02,0.03")
@@ -586,6 +668,9 @@ def main():
     p.set_defaults(func=cmd_irr)
 
     args = parser.parse_args()
+    _LOCALE = args.locale
+    if _LOCALE == "ja":
+        LABELS = ("弱気", "基準", "強気")
     if not args.cmd:
         parser.print_help()
         return 0

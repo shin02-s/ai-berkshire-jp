@@ -26,6 +26,11 @@ from decimal import Decimal, Context, ROUND_HALF_EVEN, InvalidOperation
 # ---------------------------------------------------------------------------
 
 _CTX = Context(prec=28, rounding=ROUND_HALF_EVEN)
+_LOCALE = "zh"
+
+
+def _t(zh: str, ja: str) -> str:
+    return ja if _LOCALE == "ja" else zh
 
 
 def exact(value) -> Decimal:
@@ -52,6 +57,18 @@ def fmt_number(d: Decimal, unit: str = "") -> str:
     if abs_v >= 1e6:
         return f"{v/1e6:.2f}M"
     return f"{v:,.2f}"
+
+
+def fmt_currency(d: Decimal, currency: str) -> str:
+    """Format JPY in Japanese large-number units; preserve legacy output otherwise."""
+    if currency.upper() != "JPY":
+        return f"{fmt_number(d)} {currency}".rstrip()
+    absolute = abs(d)
+    if absolute >= Decimal("1e12"):
+        return f"{d / Decimal('1e12'):,.2f}兆円"
+    if absolute >= Decimal("1e8"):
+        return f"{d / Decimal('1e8'):,.2f}億円"
+    return f"{d:,.0f}円"
 
 
 def _force_utf8_stdio():
@@ -81,26 +98,26 @@ def verify_market_cap(price, shares, reported_cap, currency=""):
     deviation = abs(float(calculated - r) / float(r)) * 100 if r != 0 else 0
 
     print("=" * 60)
-    print("市值验算 (Market Cap Verification)")
+    print(_t("市值验算 (Market Cap Verification)", "時価総額の検算"))
     print("=" * 60)
-    print(f"  股价 (Price):       {p} {currency}")
-    print(f"  总股本 (Shares):    {fmt_number(s)}")
-    print(f"  计算市值:           {fmt_number(calculated)} {currency}")
-    print(f"  报告市值:           {fmt_number(r)} {currency}")
-    print(f"  偏差:               {deviation:.2f}%")
+    print(_t(f"  股价 (Price):       {p} {currency}", f"  株価:               {p} {currency}"))
+    print(_t(f"  总股本 (Shares):    {fmt_number(s)}", f"  発行済株式数:       {fmt_number(s)}"))
+    print(_t(f"  计算市值:           {fmt_number(calculated)} {currency}", f"  計算時価総額:       {fmt_currency(calculated, currency)}"))
+    print(_t(f"  报告市值:           {fmt_number(r)} {currency}", f"  報告時価総額:       {fmt_currency(r, currency)}"))
+    print(_t(f"  偏差:               {deviation:.2f}%", f"  偏差:               {deviation:.2f}%"))
     print()
 
     if deviation > 5:
-        print(f"  ❌ 警告: 偏差 {deviation:.1f}% > 5%, 请检查:")
-        print(f"     - 股本是否为最新（回购/增发）?")
-        print(f"     - 单位是否一致（港币 vs 人民币 vs 美元）?")
-        print(f"     - 股价是否为最新?")
+        print(_t(f"  ❌ 警告: 偏差 {deviation:.1f}% > 5%, 请检查:", f"  ❌ 警告: 偏差 {deviation:.1f}% > 5%。次を確認してください:"))
+        print(_t("     - 股本是否为最新（回购/增发）?", "     - 自己株式取得・消却・増資を反映した株式数か"))
+        print(_t("     - 单位是否一致（港币 vs 人民币 vs 美元）?", "     - 円・百万円・億円・兆円の単位が一致しているか"))
+        print(_t("     - 股价是否为最新?", "     - 株価の基準日が一致しているか"))
         return False
     elif deviation > 1:
-        print(f"  ⚠️  偏差 {deviation:.1f}% 在可接受范围, 可能因股价波动/股本变化")
+        print(_t(f"  ⚠️  偏差 {deviation:.1f}% 在可接受范围, 可能因股价波动/股本变化", f"  ⚠️  偏差 {deviation:.1f}%: 株価変動または株式数の変化を確認してください"))
         return True
     else:
-        print(f"  ✅ 验证通过, 偏差仅 {deviation:.2f}%")
+        print(_t(f"  ✅ 验证通过, 偏差仅 {deviation:.2f}%", f"  ✅ 検算合格。偏差 {deviation:.2f}%"))
         return True
 
 
@@ -114,9 +131,9 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
     p = exact(price)
 
     print("=" * 60)
-    print("估值指标验算 (Valuation Verification)")
+    print(_t("估值指标验算 (Valuation Verification)", "評価指標の検算"))
     print("=" * 60)
-    print(f"  当前股价: {p}")
+    print(_t(f"  当前股价: {p}", f"  現在株価: {p}"))
     print()
 
     results = {}
@@ -129,9 +146,9 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
             results["PE"] = float(pe)
             # Earnings yield
             ey = _CTX.divide(e, p) * 100
-            print(f"  盈利收益率: {ey:.2f}%")
+            print(_t(f"  盈利收益率: {ey:.2f}%", f"  益回り:    {ey:.2f}%"))
         else:
-            print(f"  PE: EPS为0, 无法计算")
+            print(_t("  PE: EPS为0, 无法计算", "  PER: EPSが0のため計算不能"))
 
     if bvps is not None:
         b = exact(bvps)
@@ -158,7 +175,7 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
         d = exact(dividend)
         if p != 0:
             div_yield = _CTX.divide(d, p) * 100
-            print(f"  股息率:    {d} / {p} = {div_yield:.2f}%")
+            print(_t(f"  股息率:    {d} / {p} = {div_yield:.2f}%", f"  配当利回り:{d} / {p} = {div_yield:.2f}%"))
             results["Dividend_Yield"] = float(div_yield)
 
     if revenue_per_share is not None:
@@ -169,7 +186,7 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
             results["PS"] = float(ps)
 
     print()
-    print("  ✅ 以上指标均使用精确十进制计算, 无浮点误差")
+    print(_t("  ✅ 以上指标均使用精确十进制计算, 无浮点误差", "  ✅ すべて正確な十進数で計算しました"))
     return results
 
 
@@ -180,7 +197,7 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
 def cross_validate(field_name, source_values: dict, unit="", tolerance_pct=2.0):
     """Compare a data point across multiple sources, flag discrepancies."""
     print("=" * 60)
-    print(f"交叉验证: {field_name} (Cross-Validation)")
+    print(_t(f"交叉验证: {field_name} (Cross-Validation)", f"交差検証: {field_name}"))
     print("=" * 60)
 
     values = {k: exact(v) for k, v in source_values.items()}
@@ -192,8 +209,8 @@ def cross_validate(field_name, source_values: dict, unit="", tolerance_pct=2.0):
     n = len(sorted_vals)
     median = sorted_vals[n // 2] if n % 2 == 1 else (sorted_vals[n//2-1] + sorted_vals[n//2]) / 2
 
-    print(f"  数据来源数: {len(sources)}")
-    print(f"  参考中位数: {fmt_number(exact(median))} {unit}")
+    print(_t(f"  数据来源数: {len(sources)}", f"  データ源数: {len(sources)}"))
+    print(_t(f"  参考中位数: {fmt_number(exact(median))} {unit}", f"  参照中央値: {fmt_number(exact(median))} {unit}"))
     print()
 
     all_ok = True
@@ -202,18 +219,18 @@ def cross_validate(field_name, source_values: dict, unit="", tolerance_pct=2.0):
         status = "✅" if dev <= tolerance_pct else "❌"
         if dev > tolerance_pct:
             all_ok = False
-        print(f"  {status} {src:20s}: {fmt_number(val)} {unit}  (偏差 {dev:.2f}%)")
+        print(_t(f"  {status} {src:20s}: {fmt_number(val)} {unit}  (偏差 {dev:.2f}%)", f"  {status} {src:20s}: {fmt_number(val)} {unit}  (偏差 {dev:.2f}%)"))
 
     print()
     if all_ok:
-        print(f"  ✅ 所有来源偏差 ≤ {tolerance_pct}%, 数据一致")
+        print(_t(f"  ✅ 所有来源偏差 ≤ {tolerance_pct}%, 数据一致", f"  ✅ 全データ源の偏差が {tolerance_pct}% 以下です"))
     else:
-        print(f"  ⚠️  存在来源偏差 > {tolerance_pct}%, 请核实差异原因")
-        print(f"     建议: 优先采用公司年报/交易所数据")
+        print(_t(f"  ⚠️  存在来源偏差 > {tolerance_pct}%, 请核实差异原因", f"  ⚠️  {tolerance_pct}% を超える不一致があります。原因を確認してください"))
+        print(_t("     建议: 优先采用公司年报/交易所数据", "     有価証券報告書、会社開示、取引所情報を優先します"))
 
     # Consensus value
     consensus = median
-    print(f"\n  共识值 (加权中位数): {fmt_number(exact(consensus))} {unit}")
+    print(_t(f"\n  共识值 (加权中位数): {fmt_number(exact(consensus))} {unit}", f"\n  合意値（中央値）: {fmt_number(exact(consensus))} {unit}"))
     return {"consensus": consensus, "all_consistent": all_ok}
 
 
@@ -304,25 +321,25 @@ def exact_calc(expr: str):
     Supports: +, -, *, /, (), numbers (including scientific notation).
     """
     print("=" * 60)
-    print("精确计算 (Exact Calculator)")
+    print(_t("精确计算 (Exact Calculator)", "正確な計算"))
     print("=" * 60)
 
     # Safe evaluation: only allow numbers and arithmetic
     allowed = set("0123456789.+-*/() eE")
     if not all(c in allowed for c in expr.replace(" ", "")):
-        print(f"  ❌ 不安全的表达式: {expr}")
+        print(_t(f"  ❌ 不安全的表达式: {expr}", f"  ❌ 安全でない式です: {expr}"))
         return None
 
     try:
         # Replace scientific notation for Decimal compatibility
         result = eval(expr, {"__builtins__": {}}, {})
         d_result = exact(result)
-        print(f"  表达式: {expr}")
-        print(f"  结果:   {fmt_number(d_result)}")
-        print(f"  精确值: {d_result}")
+        print(_t(f"  表达式: {expr}", f"  式:     {expr}"))
+        print(_t(f"  结果:   {fmt_number(d_result)}", f"  結果:   {fmt_number(d_result)}"))
+        print(_t(f"  精确值: {d_result}", f"  正確値: {d_result}"))
         return float(d_result)
     except Exception as e:
-        print(f"  ❌ 计算错误: {e}")
+        print(_t(f"  ❌ 计算错误: {e}", f"  ❌ 計算エラー: {e}"))
         return None
 
 
@@ -336,7 +353,7 @@ def three_scenario_valuation(current_price, current_eps, shares_billion,
                              years=3, currency=""):
     """Calculate three-scenario target prices with exact arithmetic."""
     print("=" * 60)
-    print("三情景估值模型 (Three-Scenario Valuation)")
+    print(_t("三情景估值模型 (Three-Scenario Valuation)", "三情景評価モデル"))
     print("=" * 60)
 
     p = exact(current_price)
@@ -344,16 +361,16 @@ def three_scenario_valuation(current_price, current_eps, shares_billion,
     shares = exact(shares_billion)
 
     scenarios = [
-        ("乐观 (Bull)", growth_optimistic, pe_optimistic),
-        ("中性 (Base)", growth_neutral, pe_neutral),
-        ("悲观 (Bear)", growth_pessimistic, pe_pessimistic),
+        (_t("乐观 (Bull)", "強気"), growth_optimistic, pe_optimistic),
+        (_t("中性 (Base)", "基準"), growth_neutral, pe_neutral),
+        (_t("悲观 (Bear)", "弱気"), growth_pessimistic, pe_pessimistic),
     ]
 
-    print(f"  当前股价: {p} {currency}")
-    print(f"  当前EPS:  {eps}")
-    print(f"  预测期:   {years}年")
+    print(_t(f"  当前股价: {p} {currency}", f"  現在株価: {p} {currency}"))
+    print(_t(f"  当前EPS:  {eps}", f"  現在EPS:  {eps}"))
+    print(_t(f"  预测期:   {years}年", f"  予測期間: {years}年"))
     print()
-    print(f"  {'情景':12} {'年增速':>8} {'目标PE':>8} {'目标EPS':>10} {'目标股价':>10} {'涨跌幅':>8}")
+    print(_t(f"  {'情景':12} {'年增速':>8} {'目标PE':>8} {'目标EPS':>10} {'目标股价':>10} {'涨跌幅':>8}", f"  {'情景':12} {'年成長':>8} {'目標PER':>8} {'目標EPS':>10} {'目標株価':>10} {'騰落率':>8}"))
     print(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*10} {'-'*10} {'-'*8}")
 
     for name, growth, pe in scenarios:
@@ -370,7 +387,7 @@ def three_scenario_valuation(current_price, current_eps, shares_billion,
               f"{float(future_eps):>10.2f} {float(target_price):>9.1f} {change:>+7.1f}%")
 
     print()
-    print("  ✅ 所有计算使用精确十进制, 结果可审计复现")
+    print(_t("  ✅ 所有计算使用精确十进制, 结果可审计复现", "  ✅ すべて正確な十進数で計算し、再現できます"))
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +395,7 @@ def three_scenario_valuation(current_price, current_eps, shares_billion,
 # ---------------------------------------------------------------------------
 
 def main():
+    global _LOCALE
     parser = argparse.ArgumentParser(
         description="Financial Rigor Toolkit — 金融数据严谨性验证工具",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -390,6 +408,8 @@ Examples:
   %(prog)s calc --expr '510 * 9.11e9'
         """)
 
+    parser.add_argument("--locale", choices=("zh", "ja"), default="zh",
+                        help="出力言語 / 输出语言")
     sub = parser.add_subparsers(dest="command")
 
     # verify-market-cap
@@ -437,6 +457,7 @@ Examples:
 
     _force_utf8_stdio()
     args = parser.parse_args()
+    _LOCALE = args.locale
 
     if args.command == "verify-market-cap":
         verify_market_cap(args.price, args.shares, args.reported, args.currency)
