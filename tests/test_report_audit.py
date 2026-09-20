@@ -122,6 +122,29 @@ class TestAbsoluteValueGuard(unittest.TestCase):
             "超过 1e15 的负值未被过滤（abs() 守卫失效）")
 
 
+class TestJapaneseMoneyExtraction(unittest.TestCase):
+
+    MD = (
+        "| 項目 | 2026年 |\n"
+        "|---|---|\n"
+        "| 売上高 | 1.25兆円 |\n"
+        "| 営業利益 | △125百万円 |\n"
+        "| 純利益 | (80)億円 |\n"
+        "| 配当 | 75円 |\n"
+    )
+
+    def setUp(self):
+        self.points = R.extract_data_points(self.MD)
+
+    def test_extracts_japanese_units(self):
+        self.assertTrue({'兆円', '百万円', '億円', '円'} <= {p['unit'] for p in self.points})
+
+    def test_extracts_japanese_negative_notation(self):
+        values = {p['reported_value'] for p in self.points}
+        self.assertIn(-125.0, values)
+        self.assertIn(-80.0, values)
+
+
 class TestGbkStdoutSurvival(unittest.TestCase):
     """BUG-2：Windows GBK 控制台下含 € 的报告必须能正常 extract 而不崩溃。"""
 
@@ -169,6 +192,36 @@ class TestGbkStdoutSurvival(unittest.TestCase):
             R._force_utf8_stdio()      # 不应抛异常
         finally:
             sys.stdout = orig
+
+
+class TestJapaneseVerdict(unittest.TestCase):
+
+    def _run_verdict(self, fetched_value):
+        payload = (
+            '[{"id":1,"label":"売上高","reported_value":100,"unit":"億円",'
+            f'"fetched_value":{fetched_value},"fetched_source":"EDINET",'
+            f'"fetched_value2":{fetched_value},"fetched_source2":"会社IR",'
+            '"line_number":3,"raw_text":"売上高 100億円"}]'
+        )
+        return subprocess.run(
+            [sys.executable, os.path.join(_TOOLS, 'report_audit.py'),
+             '--locale', 'ja', 'verdict', '--market', 'jp', '--results', payload],
+            capture_output=True,
+        )
+
+    def test_japanese_pass_verdict(self):
+        proc = self._run_verdict(100)
+        output = proc.stdout.decode('utf-8', 'replace')
+        self.assertEqual(proc.returncode, 0, output)
+        self.assertIn('レポート数値監査', output)
+        self.assertIn('【合格】', output)
+
+    def test_japanese_fail_verdict(self):
+        proc = self._run_verdict(80)
+        output = proc.stdout.decode('utf-8', 'replace')
+        self.assertEqual(proc.returncode, 1, output)
+        self.assertIn('【不合格】', output)
+        self.assertIn('報告値:', output)
 
 
 if __name__ == '__main__':

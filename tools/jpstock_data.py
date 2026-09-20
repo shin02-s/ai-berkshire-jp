@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -52,10 +53,10 @@ def _force_utf8_stdio() -> None:
 
 
 def normalize_code(code: str) -> str:
-    """Convert a Tokyo four-digit stock code to its Yahoo Finance symbol."""
+    """Convert a four-character TSE security code to a Yahoo Finance symbol."""
     base = code.strip().upper().removesuffix(".T")
-    if not (len(base) == 4 and base.isdigit()):
-        raise ValueError("証券コードは4桁（例: 7203）で指定してください")
+    if not re.fullmatch(r"(?=.*\d)[0-9A-Z]{4}", base):
+        raise ValueError("証券コードは4文字（例: 7203 / 130A）で指定してください")
     return f"{base}.T"
 
 
@@ -90,11 +91,15 @@ def _request_edinet(path: str, params: dict[str, str], cache_name: str | None = 
     if cache_path:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_bytes(payload)
+    # Only pace actual API calls. Cache hits return before this point.
+    time.sleep(0.1)
     return payload
 
 
 def _documents_for_day(day: date) -> list[dict]:
-    cache_name = f"documents/{day.isoformat()}.json" if day < date.today() else None
+    # The list endpoint is scanned once per business day. Reuse that day's
+    # response even when several commands run on the same day.
+    cache_name = f"documents/{day.isoformat()}.json"
     payload = _request_edinet(
         "/documents.json", {"date": day.isoformat(), "type": "2"}, cache_name
     )
@@ -104,24 +109,30 @@ def _documents_for_day(day: date) -> list[dict]:
         raise RuntimeError("EDINET returned an invalid document list") from exc
 
 
-def _filings(code: str, years: int, annual_only: bool = False) -> list[dict]:
+def _filings(
+    code: str,
+    years: int | None = None,
+    annual_only: bool = False,
+    days: int | None = None,
+) -> list[dict]:
     """Find an issuer's filings. EDINET's list API is deliberately date-based."""
-    if years < 1 or years > 10:
-        raise ValueError("--years は1から10で指定してください")
-    start = date.today() - timedelta(days=366 * years)
+    if days is None:
+        if years is None or years < 1 or years > 10:
+            raise ValueError("--years は1から10で指定してください")
+        days = 366 * years
+    start = date.today() - timedelta(days=days)
     rows: list[dict] = []
     day = date.today()
     while day >= start:
-        for row in _documents_for_day(day):
-            sec_code = str(row.get("secCode") or "")
-            if not sec_code.startswith(code):
-                continue
-            if annual_only and str(row.get("docTypeCode")) != ANNUAL_SECURITIES_REPORT:
-                continue
-            rows.append(row)
+        if day.weekday() < 5:
+            for row in _documents_for_day(day):
+                sec_code = str(row.get("secCode") or "").upper()
+                if not sec_code.startswith(code.upper()):
+                    continue
+                if annual_only and str(row.get("docTypeCode")) != ANNUAL_SECURITIES_REPORT:
+                    continue
+                rows.append(row)
         day -= timedelta(days=1)
-        # EDINET requests are intentionally paced; historical results are cached locally.
-        time.sleep(0.1)
     return sorted(rows, key=lambda row: row.get("submitDateTime", ""), reverse=True)
 
 
@@ -210,7 +221,7 @@ def cmd_quote(code: str) -> None:
     latest = history.iloc[-1]
     previous = history.iloc[-2] if len(history) > 1 else None
     change = ((latest["Close"] / previous["Close"] - 1) * 100) if previous is not None else None
-    print(f"日本株行情: {symbol}  データ源: Yahoo Finance (yfinance、補助)")
+    print(f"日本株株価: {symbol}  データ源: Yahoo Finance (yfinance、補助)")
     print(f"  日付:       {history.index[-1].date()}")
     print(f"  終値:       {latest['Close']:,.2f} 円")
     if change is not None:
@@ -247,9 +258,10 @@ def cmd_filings(code: str, years: int) -> None:
 
 
 def cmd_financials(code: str) -> None:
-    rows = _filings(code, 5, annual_only=True)
+    # Annual reports should exist within 18 months; avoid a five-year first-run scan.
+    rows = _filings(code, annual_only=True, days=550)
     if not rows:
-        raise RuntimeError(f"直近5年に {code} の有価証券報告書（docTypeCode 120）が見つかりません")
+        raise RuntimeError(f"直近18か月に {code} の有価証券報告書（docTypeCode 120）が見つかりません")
     filing = rows[0]
     doc_id = filing.get("docID")
     if not doc_id:

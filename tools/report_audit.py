@@ -31,6 +31,11 @@ from decimal import Decimal, Context, ROUND_HALF_EVEN
 from random import Random
 
 _CTX = Context(prec=28, rounding=ROUND_HALF_EVEN)
+_LOCALE = 'zh'
+
+
+def _t(zh: str, ja: str) -> str:
+    return ja if _LOCALE == 'ja' else zh
 
 # ---------------------------------------------------------------------------
 # 数据点提取：从 Markdown 报告中识别财务数字
@@ -42,31 +47,35 @@ _CTX = Context(prec=28, rounding=ROUND_HALF_EVEN)
 # 注意：所有数字捕获组必须带上可选符号位 _SIGN，否则 "-1.72%" 会被抓成 "1.72"，
 # 导致核验时报告值与信源值符号相反、偏差 200%，产生假打回。
 # 符号位涵盖 ASCII 正负号、Unicode 减号(U+2212)、en-dash(U+2013)、全角正负号。
-_SIGN = r'[+\-−–－＋]?'
+_SIGN = r'[+\-−–－＋△▲]?'
+_NUMBER = r'(?:\([\d,，\.]+\)|' + _SIGN + r'[\d,，\.]+)'
+_UNIT = r'(?:兆円|億円|百万円|万円|千円|円|億[元美港]?元?|万億|[xX倍]|%|[BMT])'
 
 _PATTERNS = [
     # 百分比
-    (r'(' + _SIGN + r'[\d,，\.]+)\s*%',                        '%',    'percent'),
+    (r'(' + _NUMBER + r')\s*%',                                 '%',    'percent'),
+    # 日本円
+    (r'(' + _NUMBER + r')\s*(兆円|億円|百万円|万円|千円|円)',    '円',   'jpy'),
     # 亿元/亿美元/亿港元
-    (r'(' + _SIGN + r'[\d,，\.]+)\s*亿(元|美元|港元|RMB|USD|HKD)?', '亿',    'hundred_million'),
+    (r'(' + _NUMBER + r')\s*亿(元|美元|港元|RMB|USD|HKD)?',       '亿',    'hundred_million'),
     # 倍数 PE/PB/PS
-    (r'(' + _SIGN + r'[\d,，\.]+)\s*[xX倍]',                   'x',    'multiple'),
+    (r'(' + _NUMBER + r')\s*[xX倍]',                            'x',    'multiple'),
     # 万亿
-    (r'(' + _SIGN + r'[\d,，\.]+)\s*万亿',                      '万亿', 'trillion'),
+    (r'(' + _NUMBER + r')\s*万亿',                               '万亿', 'trillion'),
     # 美元绝对值（B/T）
-    (r'\$\s*(' + _SIGN + r'[\d,，\.]+)\s*([BMT亿])',             '$',    'usd_abs'),
+    (r'\$\s*(' + _NUMBER + r')\s*([BMT亿])',                    '$',    'usd_abs'),
     # 纯整数（如市值、收入、用户数等，出现在表格 | 里）
-    (r'\|\s*[~约]?\$?(' + _SIGN + r'[\d,，\.]+)\s*\|',          '',     'table_num'),
+    (r'\|\s*[~約约]?\$?(' + _NUMBER + r')\s*\|',              '',     'table_num'),
 ]
 
 _LABEL_RE = re.compile(
-    r'(?P<label>[^\|\n：:]{2,25})[：:\s]+[~约]?\$?(?P<num>' + _SIGN + r'[\d,，\.]+)'
-    r'\s*(?P<unit>亿[元美港]?元?|万亿|[xX倍]|%|[BMT])?'
+    r'(?P<label>[^\|\n：:]{2,25})[：:\s]+[~約约]?\$?(?P<num>' + _NUMBER + r')'
+    r'\s*(?P<unit>' + _UNIT + r')?'
 )
 
 _TABLE_ROW_RE = re.compile(
-    r'\|\s*(?P<label>[^|]{1,40})\s*\|\s*[~约]?\$?(?P<num>' + _SIGN + r'[\d,，\.]+)'
-    r'\s*(?P<unit>亿[元美港]?元?|万亿|[xX倍]|%|[BMT])?\s*\|'
+    r'\|\s*(?P<label>[^|]{1,40})\s*\|\s*[~約约]?\$?(?P<num>' + _NUMBER + r')'
+    r'\s*(?P<unit>' + _UNIT + r')?\s*\|'
 )
 
 
@@ -77,12 +86,18 @@ def _clean_num(s: str) -> float:
     全角 '－'(U+FF0D)/'＋'(U+FF0B)——报告中这些符号都可能被用作正负号。
     """
     s = s.replace(',', '').replace('，', '').strip()
+    parenthetical = s.startswith('(') and s.endswith(')')
+    if parenthetical:
+        s = s[1:-1]
     # 归一化各类符号为 ASCII
     for ch in ('−', '–', '－'):
         s = s.replace(ch, '-')
     s = s.replace('＋', '+')
+    for ch in ('△', '▲'):
+        s = s.replace(ch, '-')
     try:
-        return float(s)
+        value = float(s)
+        return -abs(value) if parenthetical else value
     except ValueError:
         return None
 
@@ -115,14 +130,14 @@ def _is_valid_label(label: str) -> bool:
 
 # 两列表格行：| 标签 | 数值 unit |（专为财务报告的 KV 表设计）
 _KV_TABLE_RE = re.compile(
-    r'^\|\s*(?P<label>[^|*\n]{2,40}?)\s*\|\s*[~约]?\$?(?P<num>' + _SIGN + r'[\d,，\.]+)\s*'
-    r'(?P<unit>亿[元美港]?元?|万亿|[xX倍]|%|[BMT亿])?\s*[\|（\(]'
+    r'^\|\s*(?P<label>[^|*\n]{2,40}?)\s*\|\s*[~約约]?\$?(?P<num>' + _NUMBER + r')\s*'
+    r'(?P<unit>' + _UNIT + r')?\s*[\|（\(]'
 )
 
 # 带标签的 KV 行：标签：数值 单位
 _KV_LABEL_RE = re.compile(
     r'(?P<label>[\u4e00-\u9fa5A-Za-z][^\|\n：:*]{1,30})[：:]\s*[~约]?\$?'
-    r'(?P<num>' + _SIGN + r'[\d,，\.]+)\s*(?P<unit>亿[元美港]?元?|万亿|[xX倍]|%|[BMT])?'
+    r'(?P<num>' + _NUMBER + r')\s*(?P<unit>' + _UNIT + r')?'
 )
 
 
@@ -154,8 +169,8 @@ def _parse_md_tables(lines: list) -> list:
                         col_header = headers_raw[col_idx] if col_idx < len(headers_raw) else f'列{col_idx}'
                         # 提取 cell 中的数字+单位
                         m = re.search(
-                            r'[~约]?\$?(' + _SIGN + r'[\d,，\.]+)\s*'
-                            r'(亿[元美港]?元?|万亿|[xX倍]|%|[BMT])?',
+                            r'[~約约]?\$?(' + _NUMBER + r')\s*'
+                            r'(' + _UNIT + r')?',
                             cell
                         )
                         if m:
@@ -292,9 +307,9 @@ def render_verdict(results: list, report_name: str = "") -> dict:
     RESET = '\033[0m'
 
     print('=' * 70)
-    print(f'{BOLD}报告数据抽检 — 准出/打回判决{RESET}')
+    print(f'{BOLD}{_t("报告数据抽检 — 准出/打回判决", "レポート数値監査 — 合否判定")}{RESET}')
     if report_name:
-        print(f'报告：{report_name}')
+        print(_t(f'报告：{report_name}', f'レポート: {report_name}'))
     print('=' * 70)
     print()
 
@@ -313,7 +328,8 @@ def render_verdict(results: list, report_name: str = "") -> dict:
         # --- 主来源比对 ---
         if fetched is None:
             # 没有提供核验值 → 跳过（不计入通过/失败）
-            print(f'  ⬜ [{item["id"]:>2}] {label[:35]:35s} {reported:>12.2f} {unit}  →  [未提供核验值，跳过]')
+            suffix = _t('未提供核验值，跳过', '照合値なし・対象外')
+            print(f'  ⬜ [{item["id"]:>2}] {label[:35]:35s} {reported:>12.2f} {unit}  →  [{suffix}]')
             continue
 
         fetched = float(fetched)
@@ -330,12 +346,12 @@ def render_verdict(results: list, report_name: str = "") -> dict:
         pass2 = (diff2 is None) or (diff2 <= _TOLERANCE)
 
         if pass1 and pass2:
-            status = f'{GREEN}✅ 通过{RESET}'
-            detail = f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
+            status = f'{GREEN}✅ {_t("通过", "合格")}{RESET}'
+            detail = f'{source}: {fetched:.2f} ({_t("偏差", "偏差")} {diff1*100:.2f}%)'
             if diff2 is not None:
                 detail += f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)'
         elif not pass1 and not pass2:
-            status = f'{RED}❌ 不通过{RESET}'
+            status = f'{RED}❌ {_t("不通过", "不合格")}{RESET}'
             detail = f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
             if diff2 is not None:
                 detail += f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)'
@@ -355,7 +371,7 @@ def render_verdict(results: list, report_name: str = "") -> dict:
             })
         else:
             # 一个来源通过，一个不通过 → 警告，不计入失败
-            status = f'{YELLOW}⚠️  警告{RESET}'
+            status = f'{YELLOW}⚠️  {_t("警告", "警告")}{RESET}'
             detail = f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
             if diff2 is not None:
                 detail += f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)'
@@ -366,7 +382,8 @@ def render_verdict(results: list, report_name: str = "") -> dict:
                 'diff2_pct': round(diff2 * 100, 2) if diff2 is not None else None,
             })
 
-        print(f'  {status} [{item["id"]:>2}] {label[:35]:35s}  报告: {reported:>12.2f} {unit}')
+        reported_label = _t('报告', '報告値')
+        print(f'  {status} [{item["id"]:>2}] {label[:35]:35s}  {reported_label}: {reported:>12.2f} {unit}')
         print(f'              {" " * 38}{detail}')
 
     print()
@@ -377,30 +394,37 @@ def render_verdict(results: list, report_name: str = "") -> dict:
     warn_count = len(warn_items)
     pass_count = total - fail_count - warn_count
 
-    print(f'  抽检总数: {total}  |  通过: {GREEN}{pass_count}{RESET}  |  警告: {YELLOW}{warn_count}{RESET}  |  不通过: {RED}{fail_count}{RESET}')
+    print(_t(
+        f'  抽检总数: {total}  |  通过: {GREEN}{pass_count}{RESET}  |  警告: {YELLOW}{warn_count}{RESET}  |  不通过: {RED}{fail_count}{RESET}',
+        f'  監査数: {total}  |  合格: {GREEN}{pass_count}{RESET}  |  警告: {YELLOW}{warn_count}{RESET}  |  不合格: {RED}{fail_count}{RESET}'))
     print()
 
     if fail_count == 0:
-        print(f'{BOLD}{GREEN}【准出】所有抽检数据通过，报告可发布。{RESET}')
+        print(f'{BOLD}{GREEN}{_t("【准出】所有抽检数据通过，报告可发布。", "【合格】すべての監査項目が合格しました。")}{RESET}')
         verdict = 'PASS'
     else:
-        print(f'{BOLD}{RED}【打回】{fail_count} 个数据点核验不通过，报告需修正后重审。{RESET}')
+        print(f'{BOLD}{RED}{_t(f"【打回】{fail_count} 个数据点核验不通过，报告需修正后重审。", f"【不合格】{fail_count}件を修正して再監査してください。")}{RESET}')
         print()
-        print(f'{BOLD}打回原因：{RESET}')
+        print(f'{BOLD}{_t("打回原因：", "不合格理由:")}{RESET}')
         for fi in fail_items:
-            print(f'  ❌ 第 {fi["line_number"]} 行 | {fi["label"]}')
-            print(f'     报告值：{fi["reported"]} {fi["unit"]}')
+            print(_t(f'  ❌ 第 {fi["line_number"]} 行 | {fi["label"]}', f'  ❌ {fi["line_number"]}行 | {fi["label"]}'))
+            print(_t(f'     报告值：{fi["reported"]} {fi["unit"]}', f'     報告値: {fi["reported"]} {fi["unit"]}'))
             print(f'     {fi["source"]}：{fi["fetched"]}  （偏差 {fi["diff1_pct"]}%）')
             if fi.get('fetched2') is not None:
                 print(f'     {fi["source2"]}：{fi["fetched2"]}  （偏差 {fi["diff2_pct"]}%）')
-            print(f'     原文：{fi["raw_text"][:80]}')
+            print(_t(f'     原文：{fi["raw_text"][:80]}', f'     原文: {fi["raw_text"][:80]}'))
             print()
         verdict = 'FAIL'
 
     if warn_count > 0:
-        print(f'{YELLOW}注意：{warn_count} 个数据点两来源结果不一致（超过1%），可能是口径差异（GAAP/Non-GAAP或汇率），请人工复核。{RESET}')
+        warning = _t(
+            f'注意：{warn_count} 个数据点两来源结果不一致（超过1%），可能是口径差异（GAAP/Non-GAAP或汇率），请人工复核。',
+            f'注意: {warn_count}件で二つの照合値が一致しません。期間・単位・会計基準を確認してください。')
+        print(f'{YELLOW}{warning}{RESET}')
         for wi in warn_items:
-            print(f'  ⚠️  {wi["label"]}  报告:{wi["reported"]} {wi["unit"]}  偏差: {wi["diff1_pct"]}% / {wi["diff2_pct"]}%')
+            print(_t(
+                f'  ⚠️  {wi["label"]}  报告:{wi["reported"]} {wi["unit"]}  偏差: {wi["diff1_pct"]}% / {wi["diff2_pct"]}%',
+                f'  ⚠️  {wi["label"]}  報告値:{wi["reported"]} {wi["unit"]}  偏差: {wi["diff1_pct"]}% / {wi["diff2_pct"]}%'))
 
     print('=' * 70)
 
@@ -433,6 +457,7 @@ def _force_utf8_stdio():
 
 
 def main():
+    global _LOCALE
     _force_utf8_stdio()
     parser = argparse.ArgumentParser(
         description='Report Audit Tool — 研究报告数据抽检工具',
@@ -462,6 +487,8 @@ def main():
     python3 tools/report_audit.py extract --report reports/xxx.md --seed 42
         """)
 
+    parser.add_argument('--locale', choices=('zh', 'ja'), default='zh',
+                        help='出力言語 / 输出语言')
     sub = parser.add_subparsers(dest='command')
 
     # extract
@@ -470,18 +497,23 @@ def main():
     ext.add_argument('--ratio', type=float, default=0.15, help='抽样比例，默认 0.15')
     ext.add_argument('--seed', type=int, default=None, help='随机种子（可选，用于复现）')
     ext.add_argument('--dry-run', action='store_true', help='只打印，不输出 JSON')
+    ext.add_argument('--market', choices=('global', 'jp'), default='global',
+                     help='照合先の市場プロファイル')
 
     # verdict
     vrd = sub.add_parser('verdict', help='根据核验结果输出准出/打回判决')
     vrd.add_argument('--results', required=True, help='JSON 数组，含 fetched_value 等字段')
     vrd.add_argument('--report', default='', help='报告名称（可选，用于显示）')
     vrd.add_argument('--output-json', action='store_true', help='将判决结果以 JSON 输出到 stdout')
+    vrd.add_argument('--market', choices=('global', 'jp'), default='global',
+                     help='照合先の市場プロファイル')
 
     args = parser.parse_args()
+    _LOCALE = args.locale
 
     if args.command == 'extract':
         if not os.path.exists(args.report):
-            print(f'❌ 文件不存在: {args.report}', file=sys.stderr)
+            print(_t(f'❌ 文件不存在: {args.report}', f'❌ ファイルがありません: {args.report}'), file=sys.stderr)
             sys.exit(1)
 
         with open(args.report, 'r', encoding='utf-8') as f:
@@ -491,22 +523,27 @@ def main():
         sampled = sample_points(all_points, ratio=args.ratio, seed=args.seed)
 
         print('=' * 70)
-        print(f'报告数据抽检清单')
-        print(f'文件：{args.report}')
-        print(f'总提取数据点：{len(all_points)}  |  抽样比例：{args.ratio:.0%}  |  抽检数量：{len(sampled)}')
+        print(_t('报告数据抽检清单', 'レポート数値監査リスト'))
+        print(_t(f'文件：{args.report}', f'ファイル: {args.report}'))
+        print(_t(
+            f'总提取数据点：{len(all_points)}  |  抽样比例：{args.ratio:.0%}  |  抽检数量：{len(sampled)}',
+            f'抽出数: {len(all_points)}  |  抽出率: {args.ratio:.0%}  |  監査数: {len(sampled)}'))
         if args.seed is not None:
-            print(f'随机种子：{args.seed}（可用于复现同一批样本）')
+            print(_t(f'随机种子：{args.seed}（可用于复现同一批样本）', f'乱数シード: {args.seed}（再現用）'))
         print('=' * 70)
         print()
-        print(f'{"ID":>3}  {"行号":>5}  {"数据标签":<35}  {"报告值":>12}  {"单位"}')
+        print(_t(f'{"ID":>3}  {"行号":>5}  {"数据标签":<35}  {"报告值":>12}  {"单位"}',
+                 f'{"ID":>3}  {"行":>5}  {"項目":<35}  {"報告値":>12}  {"単位"}'))
         print(f'{"─"*3}  {"─"*5}  {"─"*35}  {"─"*12}  {"─"*6}')
         for p in sampled:
             print(f'{p["id"]:>3}  {p["line_number"]:>5}  {p["label"][:35]:<35}  {p["reported_value"]:>12.2f}  {p["unit"]}')
         print()
-        print('↑ 请对上述每个数据点，从以下信源取数，填入 fetched_value：')
-        print('  美股：macrotrends.net（主）+ stockanalysis.com（副）')
-        print('  港股：aastocks.com（主）+ macrotrends ADR（副）')
-        print('  A股： eastmoney.com（主）+ cninfo.com.cn（副）')
+        if args.market == 'jp':
+            print('↑ 各項目をEDINET・会社IR・TDnet・JPXと別経路で照合し、fetched_valueを入力してください。')
+            print('  正本: EDINET、有価証券報告書、決算短信、会社IR、TDnet')
+            print('  市場情報: JPX上場会社情報・株価検索。独立した第二ソースがなければ低信頼と明記')
+        else:
+            print('↑ 请对上述每个数据点，从可靠信源取数，填入 fetched_value。')
         print()
 
         if not args.dry_run:
@@ -525,7 +562,8 @@ def main():
                     'fetched_value2': None,      # ← 填入副来源核验值（可选）
                     'fetched_source2': '',       # ← 填入副来源名称（可选）
                 })
-            print('抽检清单 JSON（填入 fetched_value 后，传给 verdict 命令）：')
+            print(_t('抽检清单 JSON（填入 fetched_value 后，传给 verdict 命令）：',
+                     '監査リストJSON（fetched_valueを入力してverdictへ渡します）:'))
             print()
             print(json.dumps(template, ensure_ascii=False, indent=2))
 
@@ -533,7 +571,7 @@ def main():
         try:
             results = json.loads(args.results)
         except json.JSONDecodeError as e:
-            print(f'❌ JSON 解析失败: {e}', file=sys.stderr)
+            print(_t(f'❌ JSON 解析失败: {e}', f'❌ JSON解析エラー: {e}'), file=sys.stderr)
             sys.exit(1)
 
         report_name = args.report or ''
