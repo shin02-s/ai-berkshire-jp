@@ -48,6 +48,7 @@ description: 日本株の買付前に、情報品質、能力圏、事業品質�
 8. 直近6か月の決算、M&A、規制、経営交代、不祥事。
 
 情報源はEDINET、会社IR、TDnet、JPXを優先し、`skills/financial-data-jp.md` に従う。
+EDINETからの情報取得には `tools/jpstock_data.py` を使う。財務数値は一次資料で確認し、推定や二次資料は明示する。
 
 ---
 
