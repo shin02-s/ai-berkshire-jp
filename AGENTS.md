@@ -12,8 +12,8 @@ validation tools. Keep compatibility with both Claude Code and Codex users.
 - `codex-prompts/*.md`: generated Codex custom prompts for slash-command
   style entry points. These are a compatibility layer; skills remain preferred.
 - `tools/*.py`: shared financial validation and data tools used by both systems.
-- `reports/`: research outputs. Do not rewrite unrelated reports while changing
-  tooling or skills.
+- `reports/`: research outputs (English/default). Do not rewrite unrelated reports while changing tooling or skills.
+- `reports-jp/`: research outputs (Japanese). Save Japanese reports here. Do not rewrite unrelated reports while changing tooling or skills.
 - `scripts/sync-codex-skills.py`: regenerates Codex skills from `skills/*.md`.
 - `scripts/install-codex-skills.sh` / `scripts/install-codex-skills.bat`:
   installs Codex skills locally.
