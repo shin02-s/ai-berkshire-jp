@@ -70,11 +70,46 @@ def _edinet_key() -> str:
     return key
 
 
-def _request_edinet(path: str, params: dict[str, str], cache_name: str | None = None) -> bytes:
+def _edinet_error_status(payload: bytes) -> int | None:
+    """Return an EDINET JSON error status, without exposing its message."""
+    try:
+        body = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    status = body.get("StatusCode", body.get("statusCode"))
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        return None
+    return status if status >= 400 else None
+
+
+def _edinet_error_message(status: int) -> str:
+    if status in {401, 403}:
+        return (
+            "EDINET_API_KEY が無効または失効しています。EDINETで新しいAPIキーを発行し、"
+            "scripts/set-edinet-api-key.ps1 を実行してから再試行してください。"
+        )
+    return f"EDINET API request failed (status {status})"
+
+
+def _request_edinet(
+    path: str, params: dict[str, str], cache_name: str | None = None
+) -> bytes:
     """Call EDINET v2 without logging its subscription key."""
     cache_path = CACHE_DIR / cache_name if cache_name else None
     if cache_path and cache_path.exists():
-        return cache_path.read_bytes()
+        cached_payload = cache_path.read_bytes()
+        if _edinet_error_status(cached_payload) is None:
+            return cached_payload
+        # Error bodies are not usable cache entries. Remove them when possible,
+        # then make a fresh request with the current API key.
+        try:
+            cache_path.unlink()
+        except OSError:
+            pass
 
     query = dict(params)
     query["Subscription-Key"] = _edinet_key()
@@ -84,15 +119,20 @@ def _request_edinet(path: str, params: dict[str, str], cache_name: str | None = 
         with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
             payload = response.read()
     except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise RuntimeError(_edinet_error_message(exc.code)) from exc
         raise RuntimeError(f"EDINET API request failed (HTTP {exc.code})") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"EDINET API network error: {exc.reason}") from exc
 
+    # Only pace actual API calls. Cache hits return before this point.
+    time.sleep(2)
+    error_status = _edinet_error_status(payload)
+    if error_status is not None:
+        raise RuntimeError(_edinet_error_message(error_status))
     if cache_path:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_bytes(payload)
-    # Only pace actual API calls. Cache hits return before this point.
-    time.sleep(0.1)
     return payload
 
 
@@ -129,7 +169,10 @@ def _filings(
                 sec_code = str(row.get("secCode") or "").upper()
                 if not sec_code.startswith(code.upper()):
                     continue
-                if annual_only and str(row.get("docTypeCode")) != ANNUAL_SECURITIES_REPORT:
+                if (
+                    annual_only
+                    and str(row.get("docTypeCode")) != ANNUAL_SECURITIES_REPORT
+                ):
                     continue
                 rows.append(row)
         day -= timedelta(days=1)
@@ -162,16 +205,32 @@ def _xbrl_financials(payload: bytes) -> dict[str, Decimal | None]:
     Custom issuer tags are intentionally not guessed: absent standard tags stay
     blank so a report never presents a made-up number as an EDINET fact.
     """
-    with zipfile.ZipFile(BytesIO(payload)) as archive:
-        names = [
-            name for name in archive.namelist()
-            if "/XBRL/PublicDoc/" in f"/{name}" and name.lower().endswith(".xbrl")
-        ]
-        if not names:
-            raise RuntimeError("EDINET document did not include a PublicDoc XBRL file")
-        root = ET.fromstring(archive.read(names[0]))
+    if not zipfile.is_zipfile(BytesIO(payload)):
+        raise RuntimeError(
+            "EDINET書類の応答がXBRL ZIPではありません。EDINET APIの応答・書類種別を確認してください。"
+        )
+    try:
+        with zipfile.ZipFile(BytesIO(payload)) as archive:
+            names = [
+                name
+                for name in archive.namelist()
+                if "/XBRL/PublicDoc/" in f"/{name}" and name.lower().endswith(".xbrl")
+            ]
+            if not names:
+                raise RuntimeError(
+                    "EDINET document did not include a PublicDoc XBRL file"
+                )
+            root = ET.fromstring(archive.read(names[0]))
+    except zipfile.BadZipFile as exc:
+        raise RuntimeError(
+            "EDINET書類の応答がXBRL ZIPとして読み取れませんでした。"
+        ) from exc
 
-    contexts = {element.attrib.get("id", ""): element for element in root if element.tag.endswith("context")}
+    contexts = {
+        element.attrib.get("id", ""): element
+        for element in root
+        if element.tag.endswith("context")
+    }
 
     def pick_context(kind: str) -> str | None:
         candidates = [key for key in contexts if kind in key]
@@ -188,14 +247,20 @@ def _xbrl_financials(payload: bytes) -> dict[str, Decimal | None]:
         "operating_cash_flow": ("NetCashProvidedByUsedInOperatingActivities",),
         "total_assets": ("Assets",),
         "net_assets": ("NetAssets",),
-        "shares_outstanding": ("NumberOfIssuedSharesAtTheEndOfFiscalYearIncludingTreasuryStock",),
+        "shares_outstanding": (
+            "NumberOfIssuedSharesAtTheEndOfFiscalYearIncludingTreasuryStock",
+        ),
     }
     out: dict[str, Decimal | None] = {key: None for key in names}
     for element in root.iter():
         local = element.tag.rsplit("}", 1)[-1]
         context = element.attrib.get("contextRef")
         for key, accepted in names.items():
-            expected_context = instant if key in {"total_assets", "net_assets", "shares_outstanding"} else duration
+            expected_context = (
+                instant
+                if key in {"total_assets", "net_assets", "shares_outstanding"}
+                else duration
+            )
             if out[key] is None and local in accepted and context == expected_context:
                 out[key] = _number(element.text)
     return out
@@ -210,7 +275,9 @@ def _ticker(symbol: str):
 
 def cmd_quote(code: str) -> None:
     if yf is None:
-        raise RuntimeError("yfinance が未インストールです: python -m pip install yfinance")
+        raise RuntimeError(
+            "yfinance が未インストールです: python -m pip install yfinance"
+        )
     symbol = normalize_code(code)
     try:
         history = _ticker(symbol).history(period="5d", auto_adjust=False)
@@ -220,19 +287,27 @@ def cmd_quote(code: str) -> None:
         raise RuntimeError(f"価格を取得できませんでした: {symbol}")
     latest = history.iloc[-1]
     previous = history.iloc[-2] if len(history) > 1 else None
-    change = ((latest["Close"] / previous["Close"] - 1) * 100) if previous is not None else None
+    change = (
+        ((latest["Close"] / previous["Close"] - 1) * 100)
+        if previous is not None
+        else None
+    )
     print(f"日本株株価: {symbol}  データ源: Yahoo Finance (yfinance、補助)")
     print(f"  日付:       {history.index[-1].date()}")
     print(f"  終値:       {latest['Close']:,.2f} 円")
     if change is not None:
         print(f"  前日比:     {change:+.2f}%")
-    print(f"  始値/高値/安値: {latest['Open']:,.2f} / {latest['High']:,.2f} / {latest['Low']:,.2f} 円")
+    print(
+        f"  始値/高値/安値: {latest['Open']:,.2f} / {latest['High']:,.2f} / {latest['Low']:,.2f} 円"
+    )
     print(f"  出来高:     {latest['Volume']:,.0f} 株")
 
 
 def cmd_prices(code: str, period: str, adjusted: bool) -> None:
     if yf is None:
-        raise RuntimeError("yfinance が未インストールです: python -m pip install yfinance")
+        raise RuntimeError(
+            "yfinance が未インストールです: python -m pip install yfinance"
+        )
     symbol = normalize_code(code)
     try:
         history = _ticker(symbol).history(period=period, auto_adjust=adjusted)
@@ -240,7 +315,9 @@ def cmd_prices(code: str, period: str, adjusted: bool) -> None:
         raise RuntimeError(f"yfinance から価格を取得できませんでした: {exc}") from exc
     if history.empty:
         raise RuntimeError(f"価格を取得できませんでした: {symbol}")
-    print(f"# {symbol} | {'調整済み' if adjusted else '未調整'}価格 | Yahoo Finance (yfinance)")
+    print(
+        f"# {symbol} | {'調整済み' if adjusted else '未調整'}価格 | Yahoo Finance (yfinance)"
+    )
     history.to_csv(sys.stdout)
 
 
@@ -261,7 +338,9 @@ def cmd_financials(code: str) -> None:
     # Annual reports should exist within 18 months; avoid a five-year first-run scan.
     rows = _filings(code, annual_only=True, days=550)
     if not rows:
-        raise RuntimeError(f"直近18か月に {code} の有価証券報告書（docTypeCode 120）が見つかりません")
+        raise RuntimeError(
+            f"直近18か月に {code} の有価証券報告書（docTypeCode 120）が見つかりません"
+        )
     filing = rows[0]
     doc_id = filing.get("docID")
     if not doc_id:
@@ -278,20 +357,28 @@ def cmd_financials(code: str) -> None:
     print(f"  営業CF:     {_format_yen(values['operating_cash_flow'])}")
     print(f"  総資産:     {_format_yen(values['total_assets'])}")
     print(f"  純資産:     {_format_yen(values['net_assets'])}")
-    print(f"  発行済株式数: {values['shares_outstanding'] if values['shares_outstanding'] is not None else '-'} 株")
+    print(
+        f"  発行済株式数: {values['shares_outstanding'] if values['shares_outstanding'] is not None else '-'} 株"
+    )
 
 
 def main() -> int:
     _force_utf8_stdio()
-    parser = argparse.ArgumentParser(description="日本株データ — EDINET財務 + yfinance価格")
+    parser = argparse.ArgumentParser(
+        description="日本株データ — EDINET財務 + yfinance価格"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     quote = sub.add_parser("quote", help="最新終値・出来高（yfinance）")
     quote.add_argument("code")
     prices = sub.add_parser("prices", help="日足CSV（yfinance）")
     prices.add_argument("code")
     prices.add_argument("--period", default="1y", help="yfinance period、例: 5y")
-    prices.add_argument("--adjusted", action="store_true", help="分割・配当調整済み価格")
-    financials = sub.add_parser("financials", help="最新有価証券報告書の主要財務（EDINET）")
+    prices.add_argument(
+        "--adjusted", action="store_true", help="分割・配当調整済み価格"
+    )
+    financials = sub.add_parser(
+        "financials", help="最新有価証券報告書の主要財務（EDINET）"
+    )
     financials.add_argument("code")
     filings = sub.add_parser("filings", help="提出書類一覧（EDINET）")
     filings.add_argument("code")
