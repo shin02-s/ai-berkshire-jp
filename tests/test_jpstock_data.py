@@ -50,6 +50,10 @@ class JapanStockDataTests(unittest.TestCase):
         self.assertEqual(str(values["eps"]), "150")
         self.assertEqual(str(values["shares_outstanding"]), "100000000")
 
+    def test_non_zip_financial_document_is_a_safe_error(self):
+        with self.assertRaisesRegex(RuntimeError, "XBRL ZIP"):
+            J._xbrl_financials(b'{"StatusCode": 401}')
+
     def test_edinet_key_is_required(self):
         old = J.os.environ.pop("EDINET_API_KEY", None)
         try:
@@ -83,6 +87,39 @@ class JapanStockDataTests(unittest.TestCase):
             J._documents_for_day(J.date.today())
         self.assertEqual(urlopen.call_count, 1)
         self.assertEqual(sleep.call_count, 1)
+
+    def test_edinet_error_body_is_not_cached(self):
+        response = MagicMock()
+        response.read.return_value = b'{"StatusCode": 401, "message": "invalid key"}'
+        response.__enter__.return_value = response
+        with tempfile.TemporaryDirectory() as cache_dir, patch.object(
+            J, "CACHE_DIR", Path(cache_dir)
+        ), patch.dict(J.os.environ, {"EDINET_API_KEY": "test-key"}, clear=False), patch(
+            "jpstock_data.urllib.request.urlopen", return_value=response
+        ), patch("jpstock_data.time.sleep"):
+            with self.assertRaisesRegex(RuntimeError, "無効または失効"):
+                J._request_edinet("/documents.json", {"date": "2026-09-20", "type": "2"}, "documents/test.json")
+            self.assertFalse((Path(cache_dir) / "documents" / "test.json").exists())
+
+    def test_cached_edinet_error_is_refetched_and_replaced(self):
+        response = MagicMock()
+        response.read.return_value = b'{"results": []}'
+        response.__enter__.return_value = response
+        with tempfile.TemporaryDirectory() as cache_dir, patch.object(
+            J, "CACHE_DIR", Path(cache_dir)
+        ), patch.dict(J.os.environ, {"EDINET_API_KEY": "test-key"}, clear=False), patch(
+            "jpstock_data.urllib.request.urlopen", return_value=response
+        ) as urlopen, patch("jpstock_data.time.sleep"):
+            cache_path = Path(cache_dir) / "documents" / "test.json"
+            cache_path.parent.mkdir(parents=True)
+            cache_path.write_bytes(b'{"StatusCode": 401, "message": "invalid key"}')
+            payload = J._request_edinet(
+                "/documents.json", {"date": "2026-09-20", "type": "2"}, "documents/test.json"
+            )
+            cached_payload = cache_path.read_bytes()
+        self.assertEqual(payload, b'{"results": []}')
+        self.assertEqual(urlopen.call_count, 1)
+        self.assertEqual(cached_payload, b'{"results": []}')
 
     def test_financials_searches_latest_eighteen_months(self):
         with patch("jpstock_data._filings", return_value=[]) as filings:
