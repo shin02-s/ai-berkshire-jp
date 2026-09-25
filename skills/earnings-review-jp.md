@@ -1,8 +1,15 @@
 # 決算精読：一次資料の詳細分析
 
+## 日本語版の共通実行ルール
+
+- 株価、時価総額、財務数値、バリュエーションなどの通貨単位は、日本株では円（JPY）、米国株では米ドル（USD）を使用する。市場横断比較で換算する場合は、元の通貨を併記し、換算日と為替レートを明示する。
+- レポートを保存・更新・検索する場合は、`reports/` ではなく `reports-jp/` 配下を使用する。
+- データ取得・計算・検証には必要に応じて `tools/` の既存ツールを使用する。日本株では `python tools/jpstock_data.py quote {証券コード}` で株価、`financials` / `filings` でEDINETの財務・開示資料を取得し、重要数値は `tools/financial_rigor.py`、完成レポートは `tools/report_audit.py` で検証する。
+- 競合・産業チェーンの調査では、日本・韓国・台湾・欧州・中国・米国など世界の関連企業を、上場市場や資料言語を理由に除外しない。ただし、特定の海外市場に固有のデータ取得手順、評価基準、通貨例は設けず、各社の公式IR・法定開示・取引所資料を優先する。
+
 `$ARGUMENTS` の決算を精読・分析する。
 
-**対応する入力形式**：`企業名 四半期`。例：`テンセント 2025Q4`、`PDD 2025年次報告書`、`美団 最新`（デフォルトでは直近の決算を読み込む）
+**対応する入力形式**：`企業名 四半期`。例：`トヨタ 2026年3月期第1四半期`、`Apple 2026Q3`、`NVIDIA 最新`（デフォルトでは直近の決算を読み込む）
 
 > 「私はセルサイドの調査レポートを読まず、決算の原文だけを読む。」――李録
 >
@@ -33,12 +40,12 @@
 
 Taskツールで複数のバックグラウンドAgentを起動し、以下の原資料を**並列**で取得する：
 
-1. **決算原文**：企業のIRページ、SEC EDGAR（米国株の10-K／10-Q）、HKEXnews（香港株）、CNINFO（中国A株）から取得
-2. **決算説明会の議事録／録音**：Seeking Alpha、企業のIRページ、雪球などから取得
+1. **決算原文**：企業のIRページ、日本株はEDINET／TDnet、米国株はSEC EDGARの10-K／10-Qから取得
+2. **決算説明会の議事録／録音**：企業のIRページを優先し、必要に応じて信頼できる議事録サービスで補完する
 3. **経営陣から株主への書簡**（年次報告書に含まれる場合）：全文を読む
 4. **投資家説明会／アナリストデーの資料**（直近に開催された場合）
 
-全文の原文を取得できない場合は、`skills/financial-data.md` の基準に従って標準データソースを組み合わせる（米国株：macrotrends + stockanalysis、香港株：aastocks + macrotrends、中国A株：Eastmoney + CNINFO、台湾株：FinMindの `tools/twstock_data.py` + Goodinfo）。ただし、「決算原文ではなく、第三者による集計」と必ず明記し、重要データについて2つの情報源の誤差が1%を超える場合は印を付ける。
+全文の原文を取得できない場合は、`skills/financial-data-jp.md` の基準に従い、日本株はEDINET／TDnet／企業IR、米国株はSEC EDGAR／企業IRを中心に、独立した第三者情報源で補完する。ただし、「決算原文ではなく、第三者による集計」と必ず明記し、重要データについて2つの情報源の誤差が1%を超える場合は印を付ける。競合企業の確認では各国の公式開示を参照するが、特定の海外市場専用ワークフローは設けない。
 
 ### ステップ2：中核となる財務データの抽出と検証
 
@@ -188,7 +195,7 @@ python3 tools/financial_rigor.py verify-valuation \
 
 ### ステップ7：レポートの保存
 
-レポートを `reports/{公司名}-earnings-{期间}.md` に保存する。例：`reports/腾讯-earnings-2025Q4.md`
+レポートを `reports-jp/{企業名}-earnings-{期間}.md` に保存する。例：`reports-jp/トヨタ-earnings-2026Q1.md`
 
 ### ステップ8：データの抜き取り検査（公開判定プロセス）
 
@@ -197,9 +204,9 @@ python3 tools/financial_rigor.py verify-valuation \
 ```bash
 # Step 1 — 抜き取り検査リストを抽出
 python3 tools/report_audit.py extract \
-  --report reports/{公司名}-earnings-{期间}.md
+  --report reports-jp/{企業名}-earnings-{期間}.md
 
-# Step 2 — リストの各項目について信頼できる情報源から数値を取得（skills/financial-data.mdを参照）
+# Step 2 — リストの各項目について信頼できる情報源から数値を取得（skills/financial-data-jp.mdを参照）
 
 # Step 3 — 公開可否の判定を出力
 python3 tools/report_audit.py verdict \

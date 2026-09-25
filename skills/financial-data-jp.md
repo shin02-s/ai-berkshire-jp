@@ -1,62 +1,25 @@
 # 財務データの取得とクロスチェック基準
 
+## 日本語版の共通実行ルール
+
+- 株価、時価総額、財務数値、バリュエーションなどの通貨単位は、日本株では円（JPY）、米国株では米ドル（USD）を使用する。市場横断比較で換算する場合は、元の通貨を併記し、換算日と為替レートを明示する。
+- レポートを保存・更新・検索する場合は、`reports/` ではなく `reports-jp/` 配下を使用する。
+- データ取得・計算・検証には必要に応じて `tools/` の既存ツールを使用する。日本株では `python tools/jpstock_data.py quote {証券コード}` で株価、`financials` / `filings` でEDINETの財務・開示資料を取得し、重要数値は `tools/financial_rigor.py`、完成レポートは `tools/report_audit.py` で検証する。
+- 競合・産業チェーンの調査では、日本・韓国・台湾・欧州・中国・米国など世界の関連企業を、上場市場や資料言語を理由に除外しない。ただし、特定の海外市場に固有のデータ取得手順、評価基準、通貨例は設けず、各社の公式IR・法定開示・取引所資料を優先する。
+
 本基準は、企業の財務データを扱うすべての調査に適用する。**各重要データは、必ず2つの独立した情報源から取得し、誤差が1%を超える場合は印を付ける。**
 
 ---
 
 ## データソースの優先順位
 
-### 米国株（PDD、テンセントADR、NetEase ADRなど）
+### 米国株
 
 | 優先度 | 情報源 | URL | 取得方法 |
 |--------|------|-----|---------|
-| 1（主） | **macrotrends** | macrotrends.net/stocks/charts/{ticker} | 直接アクセス、登録不要 |
-| 2（副） | **stockanalysis** | stockanalysis.com/stocks/{ticker}/financials | 直接アクセス、登録不要 |
-| 一次資料 | SEC EDGAR | sec.gov/cgi-bin/browse-edgar | 10-K／10-Q原文 |
-
-### 香港株（テンセント0700、NetEase 9999、美団3690など）
-
-| 優先度 | 情報源 | URL | 取得方法 |
-|--------|------|-----|---------|
-| 1（主） | **aastocks** | aastocks.com/tc/stocks/analysis/company-fundamental | 直接アクセス |
-| 2（副） | **macrotrends**（ADRコード） | テンセントはTCEHY、NetEaseはNTES | 直接アクセス |
-| 一次資料 | HKEXnews | hkexnews.hk | 年次報告書PDF |
-
-### 中国A株（三七互娯、G-bitsなど）
-
-| 優先度 | 情報源 | URL | 取得方法 |
-|--------|------|-----|---------|
-| 1（主） | **Eastmoney** | eastmoney.com → 株式コードを検索 → 財務諸表 | 直接アクセス |
-| 2（副） | **CNINFO** | cninfo.com.cn | 年次報告書／四半期報告書の原文PDF |
-
-### 台湾株（TSMC 2330、MediaTek 2454、Largan Precision 3008など）
-
-| 優先度 | 情報源 | URL | 取得方法 |
-|--------|------|-----|---------|
-| 1（主） | **FinMind API** | api.finmindtrade.com | `tools/twstock_data.py`（依存関係のないスクリプト。下記参照） |
-| 2（副） | **Goodinfo台湾株式情報サイト** | goodinfo.tw/tw/StockDetail.asp?STOCK_ID={コード} | 直接アクセス |
-| 一次資料 | 公開情報観測站（MOPS） | mops.twse.com.tw | 決算原文／月次売上高の開示 |
-
-**FinMindデータ取得ツール**（台湾株の分析時に優先して使用。出力には時価総額の再計算を含む）：
-
-```bash
-python3 tools/twstock_data.py quote 2330        # 最新の株価情報 + PER/PBR/配当利回り + 時価総額の再計算
-python3 tools/twstock_data.py valuation 2330    # バリュエーション指標 + PERの1年間レンジ + 52週高値・安値
-python3 tools/twstock_data.py financials 2330   # 直近5年間の主要年次財務データ（売上高/粗利率/親会社株主帰属純利益/EPS/自己資本利益率）
-python3 tools/twstock_data.py revenue 2330      # 直近13カ月の月次売上高と前年同期比
-python3 tools/twstock_data.py dividend 2330     # 近年の配当方針（現金/株式配当、権利落ち日）
-python3 tools/twstock_data.py search 台積        # 株式コードを検索（台湾株の名称は繁体字である点に注意）
-```
-
-台湾株の特記事項：
-
-1. **通貨単位はニュー台湾ドル（TWD）**。香港ドル／人民元／米ドルと併記する場合は必ず明示し、市場をまたぐ比較では先に同一通貨へ換算する
-2. **月次売上高は台湾株独自の強み**：上場・店頭公開企業は毎月10日までに前月の売上高を開示することが義務付けられており、ファンダメンタルズの転換点を追跡する最も速い公開シグナルである。earnings-review／thesis-tracker系の分析では優先して利用する（`revenue` サブコマンド）
-3. FinMindの利益計算書は**単四半期の値**。ツールは自動的に年次の値へ合算する。4四半期に満たない年には「第N四半期までの累計のみ」と表示する
-4. FinMindは未登録でも直接利用可能（1時間当たりの上限あり）。登録後のAPIトークンは**ローカルのみに保存し、gitへ絶対にコミットしない**。ツールは次の優先順位で自動的に読み込む：①環境変数 `FINMIND_TOKEN`、②ローカルファイル `local/finmind_token.txt`（`local/` は `.gitignore` で恒久的に除外済み。トークンだけを1行でこのファイルへ記載）。トークンをレポート、skill、commitに含めてはならない
-5. クロスチェック：FinMindの数値をGoodinfo（またはTSMCなどADRがある企業はmacrotrends上のADR）と照合し、下記と同じ誤差ルールを適用する。TSMCなどADRがある企業では、ADRと台湾原株の為替／預託比率の差に注意する（TSM ADR 1株 = 2330の5株）
-
----
+| 1（正本） | **SEC EDGAR** | sec.gov/edgar/search/ | 10-K／10-Q／8-K原文 |
+| 2（正本補完） | 企業IR | 各社Investor Relations | 決算資料、説明会資料、株主向け書簡 |
+| 3（クロスチェック） | stockanalysis／macrotrends | 各社ティッカーページ | 第三者集計。一次資料の代替にはしない |
 
 ### 日本株（トヨタ7203、任天堂7974など）
 
@@ -103,17 +66,17 @@ EDINETコマンドには必ず `EDINET_API_KEY` を設定する。Windowsでは
 各重要データは、必ず次の形式で表示する：
 
 ```
-売上高：1,239億元 ✅
-  - macrotrends：1,241億元
-  - stockanalysis：1,237億元
+売上高：12,390億円 ✅
+  - EDINET：12,410億円
+  - 企業IR：12,370億円
   - 誤差：0.3%
 ```
 
 差異がある場合の例：
 ```
-純利益：245億元 ⚠️ データに差異あり
-  - macrotrends：245億元（GAAP）
-  - stockanalysis：278億元（Non-GAAP）
+純利益：2,450億円 ⚠️ データに差異あり
+  - 法定開示：2,450億円（GAAP）
+  - 第三者集計：2,780億円（Non-GAAP）
   - 誤差：13.5% — 理由：会計基準の違い（GAAP vs Non-GAAP）
 ```
 
@@ -124,7 +87,7 @@ EDINETコマンドには必ず `EDINET_API_KEY` を設定する。Windowsでは
 | 原因 | 説明 |
 |------|------|
 | GAAP vs Non-GAAP | 最も一般的。特に利益関連データで多い |
-| 為替換算 | 香港ドル／人民元／米ドルの換算時点が異なる |
+| 為替換算 | 異なる通貨へ換算した時点または使用レートが異なる |
 | 会計年度の定義 | 暦年 vs 会計年度（Appleの会計年度は10月終了など） |
 | 連結範囲 | 非支配株主持分を含むかどうか |
 | データ更新の遅れ | 一部プラットフォームが最新の決算をまだ反映していない |
@@ -133,7 +96,7 @@ EDINETコマンドには必ず `EDINET_API_KEY` を設定する。Windowsでは
 
 ## 特別ルール
 
-1. **未上場企業**（miHoYo、Lilith Gamesなど）：一次資料が1つしかない場合は、データの前に `[推定]` と表示し、クロスチェックを行わない
+1. **未上場企業**：一次資料が1つしかない場合は、データの前に `[推定]` と表示し、クロスチェックを行わない
 2. **四半期データ vs 年次データ**：クロスチェックでは年次データを優先する。四半期データは一部の情報源で更新が遅れる場合がある
 3. **決算原文を優先**：2つの情報源がいずれも決算原文（10-K／年次報告書PDF）と一致しない場合は、決算原文を正とし、情報源の誤りを表示する
 
@@ -163,14 +126,7 @@ EDINETコマンドには必ず `EDINET_API_KEY` を設定する。Windowsでは
 
 | 対象 | 主な情報源 | 予備の情報源 |
 |------|---------|---------|
-| PDD／Pinduoduo | macrotrends.net/stocks/charts/PDD | stockanalysis.com/stocks/pdd |
-| テンセント | macrotrends.net/stocks/charts/TCEHY | aastocks（0700.HK） |
-| NetEase | macrotrends.net/stocks/charts/NTES | aastocks（9999.HK） |
-| 三七互娯 | eastmoney.com（002555） | cninfo.com.cn |
-| G-bits | eastmoney.com（603444） | cninfo.com.cn |
-| Nintendo | macrotrends.net/stocks/charts/NTDOY | stockanalysis.com/stocks/ntdoy |
-| Capcom | macrotrends（CCOEY） | stockanalysis（CCOEY） |
-| TSMC | tools/twstock_data.py（2330） | goodinfo.tw / macrotrends（TSM、1 ADR = 5株である点に注意） |
-| MediaTek | tools/twstock_data.py（2454） | goodinfo.tw |
+| Apple | SEC EDGAR（AAPL） | Apple IR／stockanalysis |
+| Microsoft | SEC EDGAR（MSFT） | Microsoft IR／stockanalysis |
 | トヨタ | tools/jpstock_data.py（7203）EDINET財務 | TDnet／トヨタIR |
 | 任天堂 | tools/jpstock_data.py（7974）EDINET財務 | TDnet／任天堂IR |
