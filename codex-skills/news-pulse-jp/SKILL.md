@@ -3,6 +3,17 @@ name: news-pulse
 description: 企業ニュースの脈動：株価の異常変動を迅速に要因分析。4つの並列Agentで企業イベント／規制・政策／業界・競合／市場心理を調査し、「イベント時系列 + 変動の主因判断 + 投資仮説の再検討要否」を出力する。
 ---
 
+## Codexアダプター注記
+
+このスキルは `skills/news-pulse-jp.md` から生成され、Claude Code とCodexで正本を共有する。
+
+- `$ARGUMENTS` は現在のCodexタスクにおけるユーザー依頼として扱う。
+- ソース中のClaude Code固有インターフェースは機能を落とさず、現在のセッションで最も近いCodex機能へ読み替える。`TeamCreate` は利用可能なサブAgentによるチーム編成、`TaskCreate` は境界の明確な担当割当、`TaskUpdate` は進捗・完了状態の追跡、`SendMessage` はAgent間の追加指示・結果回収、`TeamDelete` と `shutdown_request` は全結果回収後の終了・整理として扱う。
+- `Task` / `Agent` は利用可能なサブAgent、`WebSearch` はWeb検索、`Bash` はシェル、`Read` / `Write` は通常のファイル読取・編集へ読み替える。サブAgentを利用できない場合は、同じ役割と検証順序を主タスクで逐次実行し、未実施の並行調査を装わない。
+- 共通ツールはリポジトリ直下から実行し、日本版では `--locale ja`、必要に応じて `--market jp` / `--currency JPY` を付ける。
+- 調査前に `date` で当日を確認し、データ基準日をレポート冒頭に記載する。
+- `AGENTS.md` の品質規則に従い、財務数値の照合、正確な計算、欠損と不確実性を明示する。
+
 # 企業ニュースの脈動：株価の異常変動を迅速に要因分析するチーム
 
 ## 日本語版の共通実行ルール
