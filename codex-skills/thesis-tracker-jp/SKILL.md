@@ -1,3 +1,19 @@
+---
+name: thesis-tracker-jp
+description: "AI Berkshire 日本株スキル: 投資仮説の追跡：購入後の規律システム。生成元: skills/thesis-tracker-jp.md。"
+---
+
+## Codexアダプター注記
+
+このスキルは `skills/thesis-tracker-jp.md` から生成され、Claude Code とCodexで正本を共有する。
+
+- `$ARGUMENTS` は現在のCodexタスクにおけるユーザー依頼として扱う。
+- ソース中のClaude Code固有インターフェースは機能を落とさず、現在のセッションで最も近いCodex機能へ読み替える。`TeamCreate` は利用可能なサブAgentによるチーム編成、`TaskCreate` は境界の明確な担当割当、`TaskUpdate` は進捗・完了状態の追跡、`SendMessage` はAgent間の追加指示・結果回収、`TeamDelete` と `shutdown_request` は全結果回収後の終了・整理として扱う。
+- `Task` / `Agent` は利用可能なサブAgent、`WebSearch` はWeb検索、`Bash` はシェル、`Read` / `Write` は通常のファイル読取・編集へ読み替える。サブAgentを利用できない場合は、同じ役割と検証順序を主タスクで逐次実行し、未実施の並行調査を装わない。
+- 共通ツールはリポジトリ直下から実行し、日本版では `--locale ja`、必要に応じて `--market jp` / `--currency JPY` を付ける。
+- 調査前に `date` で当日を確認し、データ基準日をレポート冒頭に記載する。
+- `AGENTS.md` の品質規則に従い、財務数値の照合、正確な計算、欠損と不確実性を明示する。
+
 # 投資仮説の追跡：購入後の規律システム
 
 ## 日本語版の共通実行ルール
